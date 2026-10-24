@@ -2,21 +2,23 @@
 
 在空白 VPS 上一次部署 Xray 节点和 LoHo 监控管理系统。当前安装版本：**9.0.0**。
 
-## 一键安装
+## 私有仓库安装
 
-在新服务器的 SSH 终端中执行：
+此仓库已改为私有。原来的免登录 raw 下载命令不再适用。
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/linshaocong2006/loho-node/main/install.sh)
-```
+先创建细粒度只读 Token：GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token。
 
-入口脚本会下载固定提交中的安装器，核对内置 SHA256，通过后才启动安装向导。普通用户会通过 `sudo` 执行安装，root 用户直接执行。下载失败或校验不通过时停止，不执行安装器。
+- Token name：`loho-node-install`。
+- Resource owner：`linshaocong2006`。
+- Expiration：可选30天，安装完成后也可提前撤销。Token到期或撤销不影响已部署的代理和网站。
+- Repository access：`Only select repositories`，仅选择 `loho-node`。
+- Repository permissions：`Contents: Read-only`。Metadata只读权限由GitHub自动带上；其他权限不用添加。
 
-如果服务器没有 curl，先执行：
+生成后复制Token。在服务器终端粘贴并运行 [INSTALL_PRIVATE.md](INSTALL_PRIVATE.md) 中的完整命令，再按提示输入Token。
 
-```bash
-sudo apt-get update && sudo apt-get install -y curl
-```
+Token输入不回显，下载器不会把它写入凭据文件、命令参数或环境变量。下载完毕后清除当前变量，再校验固定版本的安装器并运行。Token不用提交到仓库，也不用发给任何人。
+
+无需将安装文件上传到服务器。普通用户通过sudo安装，root直接安装。没有curl时先安装curl软件包。
 
 ## 安装前准备
 
@@ -58,11 +60,7 @@ sudo loho-node renew-test
 
 ## 核验与查看源码
 
-只下载并检查内置代码和资源，不进行安装：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/linshaocong2006/loho-node/main/install.sh) --check
-```
+只下载并检查内置代码和资源，不进行安装：在已下载本仓库文件的情况下，执行 `bash install.sh --check`，按提示输入只读Token。也可在私有安装命令最后的 `bash` 调用中添加 `--check`。
 
 将安装器下载到本地后，可导出完整运行源码：
 
