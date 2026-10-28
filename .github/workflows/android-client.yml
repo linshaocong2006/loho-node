@@ -1,7 +1,7 @@
 name: Build Android client
 on:
   push:
-    branches: [clients-v1, clients-performance, users-avatars]
+    branches: [clients-v1, clients-performance, users-avatars, android-zoom]
     paths: ['clients/android/**', '.github/workflows/android-client.yml']
   workflow_dispatch:
 permissions:
@@ -26,4 +26,7 @@ jobs:
           path: clients/android/build/artifacts/*
           if-no-files-found: error
           retention-days: 3
+      - name: Native zoom gesture check
+        timeout-minutes: 8
+        run: bash clients/android/qa/run.sh
 
