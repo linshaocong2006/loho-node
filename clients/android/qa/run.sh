@@ -18,7 +18,15 @@ for loho_apk in "$loho_qa/app.apk" "$loho_qa/check.apk"; do
     "$loho_tools/apksigner" sign --ks "$loho_qa/temporary.jks" --ks-pass pass:temporary "$loho_apk"
 done
 "$loho_sdk/cmdline-tools/latest/bin/sdkmanager" 'emulator' 'system-images;android-30;google_apis;x86_64'
-echo no | "$loho_sdk/cmdline-tools/latest/bin/avdmanager" create avd -n loho-gesture -k 'system-images;android-30;google_apis;x86_64' --device pixel_2 --force
+export ANDROID_AVD_HOME="$loho_qa/avd"
+mkdir -p "$ANDROID_AVD_HOME"
+echo no | "$loho_sdk/cmdline-tools/latest/bin/avdmanager" create avd -n loho-gesture -k 'system-images;android-30;google_apis;x86_64' --device pixel_2 --path "$ANDROID_AVD_HOME/loho-gesture.avd" --force
+test -f "$ANDROID_AVD_HOME/loho-gesture.avd/config.ini"
+cat > "$ANDROID_AVD_HOME/loho-gesture.ini" <<EOF
+avd.ini.encoding=UTF-8
+path=$ANDROID_AVD_HOME/loho-gesture.avd
+target=android-30
+EOF
 sudo chmod 666 /dev/kvm
 "$loho_sdk/emulator/emulator" -avd loho-gesture -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -camera-back none -camera-front none -memory 2048 -cores 2 -partition-size 1024 > "$loho_qa/emulator.log" 2>&1 &
 loho_emulator_pid=$!
