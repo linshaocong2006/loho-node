@@ -368,7 +368,7 @@ def prepare(files,auth,domain,port,old):
     # Fresh installations already recorded the active certificate; never erase it
     # when an older installer-state file is absent.
     certificate=next(iter(certificates)) if len(certificates)==1 else old.get('certificate')
-    changes[RELEASE]=encoded({'version':VERSION,'installed':time.time(),'assets':registry,'certificate':certificate,'features':['sessions','identity-timeline','split-refresh','rule-preview','system-health','filter-memory','versioned-assets']+(['multi-user-rules','theme-switch','unified-header'] if '_experience' in files else [])})
+    changes[RELEASE]=encoded({'version':VERSION,'installed':time.time(),'assets':registry,'certificate':certificate,'features':['sessions','identity-timeline','split-refresh','rule-preview','system-health','filter-memory','versioned-assets']+(['multi-user-rules','theme-switch','unified-header','mobile-client','retained-client-tabs'] if '_experience' in files else [])})
     for path,raw in changes.items():
         if path.suffix=='.py':ast.parse(raw.decode(),feature_version=(3,8))
     return changes
@@ -391,7 +391,7 @@ def upgrade(check=False):
     files=json.loads(gzip.decompress(base64.b64decode(PAYLOAD)));auth,auth_module,domain,port,old=preflight(files)
     changes=prepare(files,auth,domain,port,old)
     if check:print('兼容性检查通过；未安装升级。');return
-    print('本次更新：通知规则多选用户、统一导航状态、深浅主题及账号说明。',flush=True)
+    print('本次更新：客户端页面保留、即时切换、后台请求暂停和列表渲染优化。',flush=True)
     backup=BACKUPS/('iteration-'+time.strftime('%Y%m%d-%H%M%S')+'-'+secrets.token_hex(4));backup.mkdir(parents=True,mode=0o700)
     before={};written=[];paused=False;stopped=[];database_backups=[]
     units=(MANAGER,COLLECTOR,TRAFFIC,AUTH)+((NOTIFY,) if APP/'notify.py' in changes else ())
@@ -460,7 +460,7 @@ def upgrade(check=False):
         if not enabled:subprocess.run(['systemctl','disable',AUTH],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         command(['nginx','-t']);command(['systemctl','reload','nginx']);raise
     print('升级完成：v'+VERSION+'。刷新原网站即可，仍使用原网站账号密码。')
-    print('在“系统状态 → 外观”切换深浅主题；通知规则可多选用户，每人独立计算冷却与无连接间隔。')
+    print('安卓客户端请关闭后重新打开；底部菜单切换将保留已打开页面。建议覆盖安装 Android 1.0.1。')
     print('后续环境检查：sudo python3 /opt/loho-node-view/upgrade.py --check')
     print('未修改代理配置、证书、用户 UUID 或通知设置；未重启 Xray。')
 
