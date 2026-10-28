@@ -68,8 +68,8 @@ try{
     if(!baseline){
      await page.evaluate(()=>NodeViewClientHost.navigate('/node-view/client.html?tab=connections'));
      const connections=page.locator('iframe:not([hidden])').contentFrame();await connections.locator('.record').first().waitFor();
-     const typography=await page.evaluate(()=>{const doc=document.querySelector('iframe:not([hidden])').contentDocument,win=doc.defaultView;return ['search','user','source','window','from-date','to-date'].map(id=>{const s=win.getComputedStyle(doc.getElementById(id));return {id,font:s.fontFamily,size:s.fontSize,weight:s.fontWeight};});});
-     if(typography.some(s=>s.size!=='14px'||s.weight!=='400')||new Set(typography.map(s=>s.font)).size!==1)throw Error('Filter typography differs: '+JSON.stringify(typography));
+     const typography=await page.evaluate(()=>{const doc=document.querySelector('iframe:not([hidden])').contentDocument,win=doc.defaultView;return ['search','user','source','window','from-date','to-date'].map(id=>{const s=win.getComputedStyle(doc.getElementById(id));return {id,font:s.fontFamily,bodyFont:win.getComputedStyle(doc.body).fontFamily,size:s.fontSize,weight:s.fontWeight};});});
+     if(typography.some(s=>s.size!=='14px'||s.weight!=='400'||s.font!==s.bodyFont)||new Set(typography.map(s=>s.font)).size!==1)throw Error('Filter typography differs: '+JSON.stringify(typography));
      await connections.locator('#user').selectOption('key:demo-0');await connections.locator('#source').selectOption('203.0.113.10');await connections.locator('#window').selectOption('1800');
      await connections.locator('#search').fill('media');
      if([390,1024].includes(width))await page.screenshot({path:path.join(output,engine+'-'+width+'-filters.png')});

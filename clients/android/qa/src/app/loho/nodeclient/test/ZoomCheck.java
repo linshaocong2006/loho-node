@@ -11,6 +11,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.webkit.WebChromeClient;
+import android.webkit.ConsoleMessage;
 import android.widget.LinearLayout;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +29,7 @@ public final class ZoomCheck extends Instrumentation {
     private final int[] location = new int[2];
     private int width, height;
     private LinearLayout root;
+    private volatile String diagnostics="";
     private static final String PAGE = "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
         + "<style>body{margin:0;font:16px sans-serif}button,input{font:inherit;height:48px}button{width:96px}main{height:2400px;background:#d7e5df}</style>"
         + "<button onclick='window.taps=(window.taps||0)+1'>Tap</button><input placeholder='Input'><main>Gesture target</main>";
@@ -95,6 +98,9 @@ public final class ZoomCheck extends Instrumentation {
     private static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
     private void checkRealClient() throws Exception {
         runOnMainSync(() -> {
+            browser.setWebChromeClient(new WebChromeClient(){
+                @Override public boolean onConsoleMessage(ConsoleMessage message){diagnostics+=message.message()+" at "+message.sourceId()+":"+message.lineNumber()+"\n";return true;}
+            });
             browser.setWebViewClient(new WebViewClient(){
                 @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                     try {
@@ -106,7 +112,7 @@ public final class ZoomCheck extends Instrumentation {
                         String name=path.substring("/node-view/".length());
                         String mime=name.endsWith(".html")?"text/html":name.endsWith(".js")?"application/javascript":name.endsWith(".css")?"text/css":name.endsWith(".png")?"image/png":name.endsWith(".svg")?"image/svg+xml":"application/json";
                         return new WebResourceResponse(mime,"UTF-8",getContext().getAssets().open("panel/"+name));
-                    }catch(Exception e){return new WebResourceResponse("text/plain","UTF-8",404,"Not found",null,new ByteArrayInputStream(new byte[0]));}
+                    }catch(Exception e){diagnostics+=request.getUrl()+": "+e+"\n";return new WebResourceResponse("text/plain","UTF-8",404,"Not found",null,new ByteArrayInputStream(new byte[0]));}
                 }
             });
             browser.loadUrl("https://loho.invalid/node-view/client.html");
@@ -132,7 +138,7 @@ public final class ZoomCheck extends Instrumentation {
     }
     private void waitFor(String expression) throws Exception {
         for(int i=0;i<150;i++){if("true".equals(js(expression))){SystemClock.sleep(300);return;}SystemClock.sleep(100);}
-        throw new AssertionError("Client did not become ready: "+expression);
+        throw new AssertionError("Client did not become ready: "+expression+"; document="+js("JSON.stringify({url:location.href,html:document.documentElement.outerHTML.slice(0,500),text:document.body?.innerText.slice(0,200),host:!!window.NodeViewClientHost})")+"; console="+diagnostics);
     }
     private void load() throws Exception {
         runOnMainSync(() -> browser.loadDataWithBaseURL("https://loho.invalid/node-view/client.html", PAGE, "text/html", "UTF-8", null));
