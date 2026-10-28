@@ -1,0 +1,29 @@
+name: Build Android client
+on:
+  push:
+    branches: [clients-v1]
+    paths: ['clients/android/**', '.github/workflows/android-client.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Android build tools
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+          bash clients/android/build.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: loho-node-android-unsigned
+          path: clients/android/build/artifacts/*
+          if-no-files-found: error
+          retention-days: 3
+
