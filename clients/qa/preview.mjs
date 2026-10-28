@@ -2,12 +2,35 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const here=path.dirname(fileURLToPath(import.meta.url)),root=path.resolve(process.argv[2]),output=path.resolve(process.argv[3]);fs.mkdirSync(output,{recursive:true});
 const fixture=fs.readFileSync(path.join(here,'fixture.js'));
 const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.webmanifest':'application/manifest+json'};
-const server=http.createServer((req,res)=>{try{const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);if(pathname==='/node-view/fixture.js'){res.setHeader('Content-Type','application/javascript');res.end(fixture);return;}if(!pathname.startsWith('/node-view/'))throw Error('route');const file=path.resolve(root,pathname.slice('/node-view/'.length)||'index.html');if(!file.startsWith(root+path.sep))throw Error('path');let body=fs.readFileSync(file);if(file.endsWith('.html'))body=Buffer.from(body.toString().replace('<head>','<head><script src="fixture.js"></script>'));res.setHeader('Content-Type',mime[path.extname(file)]||'application/octet-stream');if(file.endsWith('.html')&&!file.endsWith('login.html')){res.setHeader('X-Frame-Options',file.endsWith('client.html')?'DENY':'SAMEORIGIN');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors "+(file.endsWith('client.html')?"'none'":"'self'"));}res.end(body);}catch{res.writeHead(404);res.end('Not found');}});
+const qaUsers=['ADMIN','LoHo','Phone','Tablet','Guest','Work'].map((label,i)=>({key:'demo-'+i,label,enabled:i!==4,masked:'••••••••-example'}));
+const photos=new Map();let rosterRevision=0;
+const profileInfo=(kind,key='')=>{const raw=photos.get(kind+':'+key),version=raw?createHash('sha256').update(raw).digest('hex').slice(0,24):'';return {version,url:version?'/node-view/manager/api/avatar?'+new URLSearchParams({kind,key,v:version}):''};};
+const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
+const server=http.createServer(async(req,res)=>{try{
+ const url=new URL(req.url,'http://localhost'),pathname=decodeURIComponent(url.pathname);
+ if(pathname==='/node-view/fixture.js'){res.setHeader('Content-Type','application/javascript');res.end(fixture);return;}
+ if(pathname==='/node-view/manager/api/profiles'){json(res,200,{admin:{...profileInfo('admin'),label:'demo-admin'},users:Object.fromEntries(qaUsers.map(u=>[u.key,profileInfo('user',u.key)])),csrf:'fixture'});return;}
+ if(pathname==='/node-view/manager/api/avatar'){const raw=photos.get(url.searchParams.get('kind')+':'+url.searchParams.get('key'));if(!raw){res.writeHead(404);res.end();return;}res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store'});res.end(raw);return;}
+ if(pathname==='/node-view/manager/api/users'){json(res,200,{users:qaUsers,csrf:'fixture',revision:'qa-'+rosterRevision,busy:false});return;}
+ if(pathname==='/node-view/manager/api/job'){json(res,200,{status:'done',message:'已应用。'});return;}
+ if(req.method==='POST'&&['/node-view/manager/api/profile','/node-view/manager/api/change'].includes(pathname)){
+  let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);
+  if(req.headers['x-csrf-token']!=='fixture'){json(res,403,{error:'CSRF'});return;}
+  if(pathname.endsWith('/profile')){if(body.version!==profileInfo(body.kind,body.key).version){json(res,409,{error:'头像已更新'});return;}const key=body.kind+':'+body.key;if(body.image===null)photos.delete(key);else photos.set(key,Buffer.from(body.image,'base64'));json(res,200,profileInfo(body.kind,body.key));return;}
+  const user=qaUsers.find(u=>u.key===body.key);if(!user||body.revision!=='qa-'+rosterRevision||!['enable','disable'].includes(body.action)){json(res,409,{error:'change'});return;}user.enabled=body.action==='enable';rosterRevision++;json(res,202,{job:'qa-job'});return;
+ }
+ if(!pathname.startsWith('/node-view/'))throw Error('route');const file=path.resolve(root,pathname.slice('/node-view/'.length)||'index.html');if(!file.startsWith(root+path.sep))throw Error('path');let body=fs.readFileSync(file);
+ if(file.endsWith('.html'))body=Buffer.from(body.toString().replace('<head>','<head><script src="fixture.js"></script>'));
+ res.setHeader('Content-Type',mime[path.extname(file)]||'application/octet-stream');
+ if(file.endsWith('.html')&&!file.endsWith('login.html')){res.setHeader('X-Frame-Options',file.endsWith('client.html')?'DENY':'SAMEORIGIN');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors "+(file.endsWith('client.html')?"'none'":"'self'"));}
+ res.end(body);
+ }catch(error){res.writeHead(404);res.end('Not found');}});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port,profile=fs.mkdtempSync(path.join(os.tmpdir(),'loho-chrome-'));
 const chrome=spawn(process.env.CHROME_BIN||'google-chrome',['--headless=new','--no-sandbox','--disable-gpu','--hide-scrollbars','--no-first-run','--disable-dev-shm-usage','--disable-background-networking','--password-store=basic','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:['ignore','ignore','pipe']});let chromeLog='';chrome.stderr.on('data',d=>chromeLog+=d.toString());
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));let debugPort;
@@ -19,8 +42,8 @@ try{
   const rpc=(method,params={})=>new Promise((resolve,reject)=>{const next=++id;pending.set(next,{resolve,reject});ws.send(JSON.stringify({id:next,method,params}));});
   const evaluate=async expression=>{const result=await rpc('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(JSON.stringify(result.exceptionDetails));return result.result.value;};
   try{await rpc('Page.enable');await rpc('Runtime.enable');await rpc('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<700});await rpc('Page.navigate',{url});
-   let ready=false;for(let i=0;i<100;i++){ready=await evaluate("!!document.querySelector('.client-header') && Array.from(document.querySelectorAll('iframe')).some(f=>!!f.contentDocument?.querySelector('.user-card, .client-user-insight'))");if(ready)break;await pause(100);}if(!ready)throw Error('Client did not load: '+errors.join('\n'));
-   await test(evaluate);await pause(300);const image=await rpc('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(output,name+'.png'),Buffer.from(image.data,'base64'));
+   let ready=false;for(let i=0;i<100;i++){ready=await evaluate("(!!document.querySelector('.client-header') && Array.from(document.querySelectorAll('iframe')).some(f=>!!f.contentDocument?.querySelector('.user-card, .client-user-insight'))) || (!document.querySelector('#client-outlet') && !!document.querySelector('#accounts .account'))");if(ready)break;await pause(100);}if(!ready)throw Error('Client did not load: '+errors.join('\n'));
+   await test(evaluate,rpc);await pause(300);const image=await rpc('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(output,name+'.png'),Buffer.from(image.data,'base64'));
    if(errors.length)throw Error(errors.join('\n'));const overflow=await evaluate('document.documentElement.scrollWidth > innerWidth + 1');if(overflow)throw Error(name+' overflows horizontally');console.log(name+': layout and interaction checks passed');
   }finally{ws.close();await fetch('http://127.0.0.1:'+debugPort+'/json/close/'+target.id);}
  }
@@ -33,6 +56,9 @@ try{
   await until(evaluate,"document.querySelectorAll('iframe').length===4 && Array.from(document.querySelectorAll('iframe')).every(f=>f.contentDocument?.readyState==='complete')",'Prewarm timeout');
   const prewarmReads=await evaluate("Array.from(document.querySelectorAll('iframe[hidden]')).map(f=>({url:f.src,count:f.contentWindow.__qaFetches?.length||0}))");
   if(prewarmReads.some(p=>p.count))throw Error('Inactive prewarm triggered API requests: '+JSON.stringify(prewarmReads));
+  const dialogStyles=[];for(let i=0;i<4;i++){await evaluate(`document.querySelectorAll('.client-nav a')[${i}].click();document.querySelector('.client-account').click()`);dialogStyles.push(await evaluate("({background:getComputedStyle(document.querySelector('.client-tools-dialog')).backgroundColor,color:getComputedStyle(document.querySelector('.client-tools-dialog')).color,radius:getComputedStyle(document.querySelector('.client-tools-dialog')).borderRadius,profile:!!document.querySelector('.client-profile-card')})"));await evaluate("document.querySelector('.client-tools-dialog').close()");}
+  if(new Set(dialogStyles.map(x=>JSON.stringify(x))).size!==1||dialogStyles[0].radius!=='20px'||!dialogStyles[0].profile)throw Error('Account dialog styles differ across tabs');
+  await evaluate("document.querySelectorAll('.client-nav a')[0].click()");
   await evaluate("window.__qaDelay=1200;window.__qaSessionCount=document.querySelectorAll('iframe').length;window.__qaHostToken={};window.__qaLoads=Array.from(document.querySelectorAll('iframe')).map(f=>[f.src,f.contentWindow.performance.timeOrigin]);document.querySelectorAll('.client-nav a')[1].click()");
   if(!await evaluate("NodeViewClientHost.current==='connections' && document.querySelectorAll('.client-nav a')[1].getAttribute('aria-current')==='page'"))throw Error('Nav should respond before slow API completes');
   await until(evaluate,activeDoc+".querySelectorAll('.record').length>0",'Connections did not load');
@@ -70,6 +96,30 @@ try{
   if(!await evaluate(activeDoc+".documentElement.dataset.theme==='light'"))throw Error('Retained view theme');
   await evaluate(activeDoc+".defaultView.localStorage.setItem('loho:theme','dark');"+activeDoc+".defaultView.dispatchEvent(new StorageEvent('storage',{key:'loho:theme'}));");
   await until(evaluate,"document.documentElement.dataset.theme==='dark'",'Restore dark');
+ });
+ async function chooseAvatar(evaluate,rpc){const dom=await rpc('DOM.getDocument');const query=await rpc('DOM.querySelector',{nodeId:dom.root.nodeId,selector:'.avatar-editor-dialog input[type=file]'});await rpc('DOM.setFileInputFiles',{nodeId:query.nodeId,files:[path.join(root,'app-icon-192.png')]});await until(evaluate,"document.querySelector('.avatar-preview img')?.src.startsWith('blob:') && !document.querySelector('.avatar-editor-actions .primary').disabled",'Image processing did not finish');await evaluate("document.querySelector('.avatar-editor-actions .primary').click()");await until(evaluate,"!document.querySelector('.avatar-editor-dialog').open",'Avatar save failed');}
+ await screen('phone-profile',base+'client.html',390,844,async(evaluate,rpc)=>{
+  await evaluate("document.querySelector('.client-account').click();document.querySelector('.client-avatar-edit').click()");await until(evaluate,"document.querySelector('.avatar-editor-dialog')?.open && !document.querySelector('.avatar-editor-dialog input').disabled",'Admin avatar editor');
+  await chooseAvatar(evaluate,rpc);if(!await evaluate("!!document.querySelector('.client-account img') && !!NodeViewProfiles.value.admin.version"))throw Error('Admin avatar not applied');
+  await evaluate("NodeViewClientHost.navigate('manager.html?app=1')");await until(evaluate,activeDoc+".querySelectorAll('.account').length===6",'User list');
+  await evaluate(activeDoc+".querySelector('.account[aria-label=LoHo] .managed-avatar').click()");await until(evaluate,"document.querySelector('.avatar-editor-dialog')?.open && !document.querySelector('.avatar-editor-dialog input').disabled",'User avatar editor');await chooseAvatar(evaluate,rpc);
+  if(!await evaluate("!!document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.account[aria-label=LoHo] .managed-avatar img')"))throw Error('User avatar not applied');
+  await evaluate("Array.from("+activeDoc+".querySelectorAll('.account[aria-label=LoHo] button')).find(b=>b.textContent==='暂停用户').click();"+activeDoc+".querySelector('#apply').click()");
+  await until(evaluate,activeDoc+".querySelector('.account[aria-label=LoHo] .state').textContent==='已暂停'",'Pause did not update');
+  await evaluate("Array.from("+activeDoc+".querySelectorAll('.account[aria-label=LoHo] button')).find(b=>b.textContent==='恢复使用').click();"+activeDoc+".querySelector('#apply').click()");await until(evaluate,activeDoc+".querySelector('.account[aria-label=LoHo] .state').textContent==='使用中'",'Resume did not update');
+  await evaluate("NodeViewClientHost.navigate('client.html')");await until(evaluate,activeDoc+".querySelector('.user-card[data-user-key=demo-1] .profile-photo')",'Overview avatar did not sync');
+  await evaluate("document.querySelector('.client-account').click()");
+ });
+ await screen('ipad-profile-sync',base+'client.html?tab=users',1194,834,async evaluate=>{
+  await until(evaluate,"!!document.querySelector('.client-account img') && !!"+activeDoc+".querySelector('.account[aria-label=LoHo] .managed-avatar img')",'Avatar not loaded on another device context');
+  await evaluate(activeDoc+".querySelectorAll('.client-user-choice')[1].click()");
+  if(!await evaluate(activeDoc+".querySelector('.client-user-choice[aria-pressed=true] .profile-photo')"))throw Error('iPad master-list avatar missing');
+  await evaluate("document.querySelector('.client-account').click()");
+ });
+ await screen('web-users',base+'manager.html',1440,1000,async evaluate=>{
+  await until(evaluate,"!!document.querySelector('.account-trigger img') && !!document.querySelector('.account[aria-label=LoHo] .managed-avatar img')",'Desktop avatar sync');
+  if(!await evaluate("Array.from(document.querySelectorAll('.account[aria-label=LoHo] button')).some(b=>b.textContent==='暂停用户')"))throw Error('Desktop pause control');
+  await evaluate("document.querySelector('.account-menu').open=true;document.querySelector('.account-avatar-action').click()");await until(evaluate,"document.querySelector('.avatar-editor-dialog')?.open",'Desktop avatar editor');
  });
  await screen('auth-expiry',base+'client.html',390,844,async evaluate=>{
   await evaluate("window.__qaUnauthorized=true;sessionStorage.setItem('qa:unauthorized','1');NodeViewClientHost.navigate('manager.html?app=1')");
