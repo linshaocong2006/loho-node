@@ -124,6 +124,12 @@ public final class ZoomCheck extends Instrumentation {
         waitForIdleSync();
     }
     private void screenshot() throws Exception {
+        CountDownLatch painted=new CountDownLatch(1);
+        runOnMainSync(()->browser.postVisualStateCallback(1,new WebView.VisualStateCallback(){
+            @Override public void onComplete(long id){browser.invalidate();painted.countDown();}
+        }));
+        require(painted.await(5,TimeUnit.SECONDS),"WebView did not finish painting screenshot");
+        waitForIdleSync();SystemClock.sleep(500);
         Bitmap bitmap=getUiAutomation().takeScreenshot();if(bitmap==null)return;
         try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"viewport.png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}finally{bitmap.recycle();}
     }
@@ -181,6 +187,7 @@ public final class ZoomCheck extends Instrumentation {
         for(int i=0;i<routes.length;i++){
             js("NodeViewClientHost.navigate('/node-view/client.html?tab="+routes[i]+"')");
             waitFor("!!document.querySelector('iframe:not([hidden])')?.contentDocument?.querySelector('"+selectors[i]+"')");
+            if(i==0)screenshot();
             // Remove the CSS fallback so this specifically proves the native guard.
             js("document.documentElement.style.setProperty('touch-action','auto','important');document.querySelector('iframe:not([hidden])').contentDocument.documentElement.style.setProperty('touch-action','auto','important')");
             pinch();
@@ -192,7 +199,6 @@ public final class ZoomCheck extends Instrumentation {
                 require(Math.abs(number("visualViewport.scale")-1)<.02,"User dialog zoomed");
                 js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').close()");
                 waitFor("!document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').open");
-                screenshot();
             }
         }
     }
