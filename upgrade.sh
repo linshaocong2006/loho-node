@@ -3,12 +3,12 @@ set -euo pipefail
 umask 077
 case "${1:-}" in
     --help|-h)
-        echo 'LoHo Node v10.0.1 现有系统升级包'
+        echo 'LoHo Node v10.1.0 现有系统升级包'
         echo '默认执行；--check 进行检查。'
         exit 0 ;;
 esac
-loho_payload_url='https://raw.githubusercontent.com/linshaocong2006/loho-node/a1b6f724d953400313fb2bdeb69e6eaaa9d49323/loho-node-upgrade.py'
-loho_payload_sha256='2b795f72ae0b01c37ac29e2d45d6ab5e7293fc56a0d77f0fd9d427a6be320d62'
+loho_payload_url='https://raw.githubusercontent.com/linshaocong2006/loho-node/730743ad1ef210f0806527a8ebe54c761a5fdd0e/loho-node-upgrade.py'
+loho_payload_sha256='2c75ee5c60a7249f911089fb633060ecde456155fb159f84e967e579207b4259'
 if ! command -v sha256sum >/dev/null 2>&1; then
     echo '缺少 sha256sum，请先安装 coreutils。' >&2
     exit 1
@@ -20,7 +20,7 @@ fi
 loho_download_dir=$(mktemp -d -t loho-download.XXXXXXXX)
 trap 'rm -rf -- "$loho_download_dir"' EXIT
 loho_installer="$loho_download_dir/loho-node-upgrade.py"
-echo '正在下载 LoHo Node v10.0.1 现有系统升级包……'
+echo '正在下载 LoHo Node v10.1.0 现有系统升级包……'
 if command -v curl >/dev/null 2>&1; then
     curl -q --fail --show-error --silent --location --retry 3 --connect-timeout 15 --max-time 120 \
         --proto '=https' --proto-redir '=https' --tlsv1.2 \
