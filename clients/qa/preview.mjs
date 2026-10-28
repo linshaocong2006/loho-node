@@ -121,6 +121,36 @@ try{
   if(!await evaluate("Array.from(document.querySelectorAll('.account[aria-label=LoHo] button')).some(b=>b.textContent==='暂停用户')"))throw Error('Desktop pause control');
   await evaluate("document.querySelector('.account-menu').open=true;document.querySelector('.account-avatar-action').click()");await until(evaluate,"document.querySelector('.avatar-editor-dialog')?.open",'Desktop avatar editor');
  });
+ // Exercise the screenshot's short names, plus long Latin and Chinese labels.
+ qaUsers.splice(0,qaUsers.length,...['JWX','ZSM','GYP','LJY','GULING','LIWEI','ABCDEFGHIJKLMNOPQRSTUVWXYZ123456','中文用户名测试'].map((label,i)=>({key:'demo-'+i,label,enabled:i!==4,masked:'••••••••-ab123456'})));rosterRevision++;
+ await screen('responsive-user-list',base+'client.html?tab=users',1024,900,async(evaluate,rpc)=>{
+  await until(evaluate,activeDoc+".querySelectorAll('#accounts > .account').length===8",'Responsive roster');
+  const report=[];
+  for(const width of [320,390,768,1024,1194,1440]){
+   await rpc('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width<700});await pause(150);
+   const result=await evaluate(`(()=>{const frame=document.querySelector('iframe:not([hidden])'),doc=frame.contentDocument,win=frame.contentWindow,rows=Array.from(doc.querySelectorAll('#accounts>.account')),issues=[];for(let i=0;i<rows.length;i++){
+    if(win.matchMedia('(min-width:1000px)').matches)doc.querySelectorAll('.client-user-choice')[i].click();
+    const row=rows[i],name=row.querySelector('.account-name'),avatar=row.querySelector('.managed-avatar'),info=row.querySelector('.account-info'),actions=row.querySelector('.actions'),range=doc.createRange();range.selectNodeContents(name);const lines=new Set(Array.from(range.getClientRects()).map(r=>Math.round(r.top)));const n=name.getBoundingClientRect(),a=avatar.getBoundingClientRect(),b=info.getBoundingClientRect(),c=actions.getBoundingClientRect();
+    if(lines.size!==1)issues.push(name.textContent+' wraps');if(name.textContent.length<=6&&name.scrollWidth>name.clientWidth+1)issues.push(name.textContent+' clipped');if(n.left<a.right+8)issues.push(name.textContent+' overlaps avatar');if(name.title!==name.textContent)issues.push('Missing full label');
+    if(c.top<b.bottom-1&&c.left<b.right-1)issues.push('Actions overlap identity');if(row.scrollWidth>row.clientWidth+1)issues.push('Row overflow');
+   }if(doc.documentElement.scrollWidth>win.innerWidth+1)issues.push('Document overflow');return {width:innerWidth,issues};})()`);
+   report.push(result);if(result.issues.length)throw Error('User identity layout: '+JSON.stringify(result));
+  }
+  fs.writeFileSync(path.join(output,'responsive-users.json'),JSON.stringify(report,null,2));
+  await rpc('Emulation.setDeviceMetricsOverride',{width:1024,height:900,deviceScaleFactor:1,mobile:false});await pause(100);await evaluate(activeDoc+".querySelectorAll('.client-user-choice')[0].click()");
+ });
+ await screen('responsive-connection-filters',base+'client.html',390,844,async(evaluate,rpc)=>{
+  await evaluate("NodeViewClientHost.navigate('connections.html?app=1')");await until(evaluate,activeDoc+".querySelectorAll('.record').length>0",'Filter data');
+  const report=[];for(const width of [320,390,768,1024,1440]){
+   await rpc('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width<700});await pause(100);
+   const result=await evaluate(`(()=>{const doc=document.querySelector('iframe:not([hidden])').contentDocument,win=doc.defaultView,controls=['search','user','source','window','from-date','to-date'].map(id=>doc.getElementById(id)),issues=[],styles=controls.map(node=>{const s=win.getComputedStyle(node);return {id:node.id,size:s.fontSize,font:s.fontFamily,weight:s.fontWeight};});
+    if(new Set(styles.map(s=>s.size)).size!==1)issues.push('Different value font sizes');if(new Set(styles.map(s=>s.font)).size!==1)issues.push('Different font families');if(new Set(styles.map(s=>s.weight)).size!==1)issues.push('Different font weights');
+    const boxes=Array.from(doc.querySelectorAll('.filters>.search,.filters>.select-wrap'));if(new Set(boxes.map(n=>Math.round(n.getBoundingClientRect().height))).size!==1)issues.push('Different control heights');for(const box of boxes){const input=box.querySelector('input,select'),r=input.getBoundingClientRect(),b=box.getBoundingClientRect();if(r.left<b.left||r.right>b.right)issues.push('Value escapes control');}
+    if(doc.documentElement.scrollWidth>win.innerWidth+1)issues.push('Horizontal overflow');return {width:innerWidth,styles,issues};})()`);
+   report.push(result);if(result.issues.length)throw Error('Filter typography: '+JSON.stringify(result));
+  }fs.writeFileSync(path.join(output,'responsive-filters.json'),JSON.stringify(report,null,2));
+  await rpc('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+ });
  await screen('auth-expiry',base+'client.html',390,844,async evaluate=>{
   await evaluate("window.__qaUnauthorized=true;sessionStorage.setItem('qa:unauthorized','1');NodeViewClientHost.navigate('manager.html?app=1')");
   await until(evaluate,"location.pathname.endsWith('/login.html')",'Expired session stayed inside a child view');
