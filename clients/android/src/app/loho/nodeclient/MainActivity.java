@@ -20,6 +20,8 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.RenderProcessGoneDetail;
+import android.webkit.WebChromeClient;
+import android.webkit.ValueCallback;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -38,6 +40,8 @@ public final class MainActivity extends Activity {
     private boolean showingError;
     private boolean resetHistory;
     private boolean backPending;
+    private ValueCallback<Uri[]> fileChoice;
+    private static final int PICK_AVATAR = 801;
     private final int background = Color.rgb(16, 27, 24);
     private final int text = Color.rgb(228, 237, 223);
 
@@ -139,9 +143,22 @@ public final class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSupportMultipleWindows(false); settings.setSafeBrowsingEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0.1");
+        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0.2");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(browser, false);
+        browser.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (fileChoice != null) fileChoice.onReceiveValue(null);
+                fileChoice = callback;
+                Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                pick.addCategory(Intent.CATEGORY_OPENABLE); pick.setType("image/*");
+                pick.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/png", "image/jpeg", "image/webp"});
+                pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try { startActivityForResult(pick, PICK_AVATAR); }
+                catch (Exception e) { fileChoice.onReceiveValue(null); fileChoice = null; }
+                return true;
+            }
+        });
         browser.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri target = request.getUrl();
@@ -200,7 +217,15 @@ public final class MainActivity extends Activity {
     private void setAppPaused(boolean paused) {
         if (browser != null) browser.evaluateJavascript("window.NodeViewClientHost && window.NodeViewClientHost.setPaused(" + paused + ")", null);
     }
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == PICK_AVATAR && fileChoice != null) {
+            Uri selected = resultCode == RESULT_OK && data != null ? data.getData() : null;
+            fileChoice.onReceiveValue(selected != null && "content".equals(selected.getScheme()) ? new Uri[]{selected} : null);
+            fileChoice = null;
+        }
+    }
     @Override public void onPause() { super.onPause(); if (browser != null) { setAppPaused(true); browser.onPause(); browser.pauseTimers(); CookieManager.getInstance().flush(); } }
     @Override public void onResume() { super.onResume(); if (browser != null && origin != null) { browser.onResume(); browser.resumeTimers(); setAppPaused(false); } }
-    @Override public void onDestroy() { if (browser != null) { root.removeView(browser); browser.destroy(); browser = null; } super.onDestroy(); }
+    @Override public void onDestroy() { if (fileChoice != null) { fileChoice.onReceiveValue(null); fileChoice = null; } if (browser != null) { root.removeView(browser); browser.destroy(); browser = null; } super.onDestroy(); }
 }

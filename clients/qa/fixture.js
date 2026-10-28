@@ -9,12 +9,12 @@ const originalFetch=window.fetch.bind(window);window.fetch=async(input,options={
  if(window.__qaUnauthorized||(window.parent!==window&&window.parent.__qaUnauthorized)||sessionStorage.getItem('qa:unauthorized')==='1')return new Response('{}',{status:401});
  const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;let value;
  if(path.endsWith('/auth/api/me'))value={user:'demo-admin',csrf:'fixture',expires:now()+2592000};
- else if(path.endsWith('/manager/api/users'))value={users,csrf:'fixture',revision:'demo',busy:false};
+
  else if(path.endsWith('/api/users-live.json'))value={...heavy(),users:heavy().users.map(({days,connections,...user})=>user)};
  else if(path.endsWith('/api/users.json'))value=heavy();
  else if(path.endsWith('/api/activity.json'))value={schema:1,generated:now(),account_last_seen:Object.fromEntries(users.map((u,i)=>[u.key,now()-i*330])),user_last_seen:{},error:null,importing:false};
  else if(path.endsWith('/api/snapshot.json'))value={schema:2,generated:now(),version:1,rows:records,users:users.map(u=>'key:'+u.key),account_labels:Object.fromEntries(users.map(u=>[u.key,u.label])),sources:['203.0.113.10'],total_groups:records.length,error:null};
- else if(path.endsWith('/auth/api/system'))value={generated:now(),version:'10.0.1',disk:{total:40*1073741824,free:28*1073741824},memory:{total:1073741824,available:600*1048576},database_bytes:1024000,log_backlog_bytes:0,certificate:{expires:now()+60*86400},services:['代理服务','网站服务','连接采集','流量采集','用户管理','网站登录','通知服务'].map(name=>({name,state:'active',loaded:true,memory:18*1048576})),samples:[]};
+ else if(path.endsWith('/auth/api/system'))value={generated:now(),version:'10.1.0',disk:{total:40*1073741824,free:28*1073741824},memory:{total:1073741824,available:600*1048576},database_bytes:1024000,log_backlog_bytes:0,certificate:{expires:now()+60*86400},services:['代理服务','网站服务','连接采集','流量采集','用户管理','网站登录','通知服务'].map(name=>({name,state:'active',loaded:true,memory:18*1048576})),samples:[]};
  else if(path.endsWith('/notify/api/state'))value={settings:{enabled:true,server:'https://ntfy.sh',topic:'demonstration-only',token_set:false,details:true},users:users.filter(u=>u.enabled),rules:[{id:'rule-demo',accounts:['demo-0','demo-1'],account:'demo-0',keyword:'example',kind:'match',cooldown:600,enabled:true}],events:[],health:{reader:null,updated:now()},csrf:'fixture',revision:'demo'};
  else if(path.endsWith('/auth/api/devices'))value={devices:[]};
  else return originalFetch(input,options);
