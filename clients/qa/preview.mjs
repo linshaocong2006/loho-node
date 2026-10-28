@@ -72,7 +72,7 @@ try{
   await until(evaluate,"document.documentElement.dataset.theme==='dark'",'Restore dark');
  });
  await screen('auth-expiry',base+'client.html',390,844,async evaluate=>{
-  await evaluate("window.__qaUnauthorized=true;NodeViewClientHost.navigate('manager.html?app=1')");
+  await evaluate("window.__qaUnauthorized=true;sessionStorage.setItem('qa:unauthorized','1');NodeViewClientHost.navigate('manager.html?app=1')");
   await until(evaluate,"location.pathname.endsWith('/login.html')",'Expired session stayed inside a child view');
   if(!await evaluate("document.querySelectorAll('iframe').length===0"))throw Error('Retained private views survived logout');
  });

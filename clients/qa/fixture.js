@@ -6,7 +6,7 @@ const records=Array.from({length:20},(_,i)=>({first:now()-60-i,last:now()-i,user
 const originalFetch=window.fetch.bind(window);window.fetch=async(input,options={})=>{
  window.__qaFetches??=[];window.__qaFetches.push({time:Date.now(),path:String(input),method:options.method||'GET'});
  const delay=window.parent!==window?window.parent.__qaDelay||0:window.__qaDelay||0;if(delay)await new Promise((resolve,reject)=>{const t=setTimeout(resolve,delay);if(options.signal){const abort=()=>{clearTimeout(t);reject(new DOMException('Aborted','AbortError'));};if(options.signal.aborted)abort();else options.signal.addEventListener('abort',abort,{once:true});}});
- if(window.parent!==window&&window.parent.__qaUnauthorized)return new Response('{}',{status:401});
+ if(window.__qaUnauthorized||(window.parent!==window&&window.parent.__qaUnauthorized)||sessionStorage.getItem('qa:unauthorized')==='1')return new Response('{}',{status:401});
  const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;let value;
  if(path.endsWith('/auth/api/me'))value={user:'demo-admin',csrf:'fixture',expires:now()+2592000};
  else if(path.endsWith('/manager/api/users'))value={users,csrf:'fixture',revision:'demo',busy:false};
