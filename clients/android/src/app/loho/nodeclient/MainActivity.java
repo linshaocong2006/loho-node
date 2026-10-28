@@ -35,6 +35,7 @@ public final class MainActivity extends Activity {
     private SharedPreferences prefs;
     private Uri origin;
     private boolean showingError;
+    private boolean resetHistory;
     private final int background = Color.rgb(16, 27, 24);
     private final int text = Color.rgb(228, 237, 223);
 
@@ -114,7 +115,7 @@ public final class MainActivity extends Activity {
         }
     }
     private void connect(String address) {
-        origin = Uri.parse(address); showingError = false;
+        origin = Uri.parse(address); showingError = false; resetHistory = true;
         List<String> saved = servers(); if (!saved.contains(address)) saved.add(address);
         prefs.edit().putString("last", address).putString("list", new JSONArray(saved).toString()).apply();
         if (browser == null) createBrowser();
@@ -140,7 +141,7 @@ public final class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri target = request.getUrl();
                 if ("lohonode".equals(target.getScheme()) && "settings".equals(target.getHost())) { showSetup(); return true; }
-                if (origin != null && sameOrigin(target) && ("/node-view".equals(target.getPath()) || target.getPath().startsWith("/node-view/"))) return false;
+                if (origin != null && sameOrigin(target) && target.getPath() != null && ("/node-view".equals(target.getPath()) || target.getPath().startsWith("/node-view/"))) return false;
                 if (request.hasGesture() && "https".equalsIgnoreCase(target.getScheme())) {
                     try { startActivity(new Intent(Intent.ACTION_VIEW, target)); } catch (Exception ignored) { }
                 }
@@ -156,19 +157,27 @@ public final class MainActivity extends Activity {
                 if (request.isForMainFrame() && response.getStatusCode() >= 400)
                     error(response.getStatusCode() == 404 ? "未找到客户端入口，请先把服务器升级到 v10.0.0。" : "服务器返回 HTTP " + response.getStatusCode() + "，请稍后重试。");
             }
-            @Override public void onPageFinished(WebView view, String url) { CookieManager.getInstance().flush(); }
+            @Override public void onPageFinished(WebView view, String url) { CookieManager.getInstance().flush(); if (resetHistory && origin != null && sameOrigin(Uri.parse(url))) { view.clearHistory(); resetHistory = false; } }
         });
     }
     private void error(String message) {
-        if (showingError || isFinishing()) return; showingError = true;
+        if (showingError || isFinishing() || origin == null) return; showingError = true;
         new AlertDialog.Builder(this).setTitle("连接提示").setMessage(message)
             .setNegativeButton("服务器设置", (d, w) -> { showingError = false; showSetup(); })
             .setPositiveButton("重试", (d, w) -> { showingError = false; if (origin != null) browser.loadUrl(origin.toString() + "/node-view/client.html"); })
             .setOnCancelListener(d -> showingError = false).show();
     }
     @Override public void onBackPressed() {
-        if (browser != null && origin != null && browser.canGoBack()) browser.goBack();
-        else if (origin != null) showSetup(); else super.onBackPressed();
+        if (browser != null && origin != null) {
+            android.webkit.WebBackForwardList history = browser.copyBackForwardList();
+            for (int i = history.getCurrentIndex() - 1; i >= 0; i--) {
+                Uri candidate = Uri.parse(history.getItemAtIndex(i).getUrl());
+                if (sameOrigin(candidate) && candidate.getPath() != null && candidate.getPath().startsWith("/node-view/") && !candidate.getPath().endsWith("/login.html")) {
+                    browser.goBackOrForward(i - history.getCurrentIndex()); return;
+                }
+            }
+            showSetup();
+        } else super.onBackPressed();
     }
     @Override public void onPause() { super.onPause(); if (browser != null) { browser.onPause(); browser.pauseTimers(); CookieManager.getInstance().flush(); } }
     @Override public void onResume() { super.onResume(); if (browser != null && origin != null) { browser.onResume(); browser.resumeTimers(); } }
