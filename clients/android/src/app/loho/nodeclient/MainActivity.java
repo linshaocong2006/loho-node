@@ -54,9 +54,10 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(false);
             root.setOnApplyWindowInsetsListener((view, insets) -> {
-                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
                 view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-                return insets;
+                // Native padding owns all insets; forwarding them makes WebView pad twice.
+                return WindowInsets.CONSUMED;
             });
         } else root.setFitsSystemWindows(true);
         setContentView(root);
@@ -147,7 +148,7 @@ public final class MainActivity extends Activity {
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0.5");
+        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0.6");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(browser, false);
         browser.setWebChromeClient(new WebChromeClient() {

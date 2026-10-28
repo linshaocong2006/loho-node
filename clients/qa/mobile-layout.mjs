@@ -14,14 +14,16 @@ await fetch(base+'manager/api/profile',{method:'POST',headers:{'Content-Type':'a
 function snapshot(){
  const rect=node=>{const r=node.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
  const header=document.querySelector('.client-header'),account=document.querySelector('.client-account'),photo=account.querySelector('img'),nav=document.querySelector('.client-nav'),sidebar=document.querySelector('.client-sidebar'),outlet=document.querySelector('#client-outlet'),frame=document.querySelector('iframe:not([hidden])'),doc=frame.contentDocument,win=frame.contentWindow;
+ const native=document.documentElement.dataset.nativeAndroid==='true';
  const h=rect(header),a=rect(account),p=photo&&rect(photo),f=rect(frame),o=rect(outlet),n=getComputedStyle(nav).display==='none'?null:rect(nav),s=getComputedStyle(sidebar).display==='none'?null:rect(sidebar),issues=[];
  const inside=(r,b)=>r.left>=b.left-.5&&r.top>=b.top-.5&&r.right<=b.right+.5&&r.bottom<=b.bottom+.5;
  if(Math.abs(a.width-a.height)>.5||a.width<39.5)issues.push('Account button squeezed');
  if(!p||Math.abs(p.width-p.height)>.5||p.width<a.width-3)issues.push('Avatar image squeezed or padded');
  if(!inside(a,h))issues.push('Avatar escapes header');
  if(rect(document.querySelector('.client-brand')).right>rect(document.querySelector('.client-header-tools')).left+.5)issues.push('Brand overlaps avatar tools');
- if(h.height>(s?56:52)+.5)issues.push('Header too tall');
- if(n){if(n.height>56.5)issues.push('Bottom navigation too tall');if(Math.abs(f.bottom-n.top)>.5)issues.push('Content and bottom navigation disagree');
+ if(h.height>(native?48:s?56:52)+.5)issues.push('Header too tall');
+ if(native&&['top','right','bottom','left'].some(x=>getComputedStyle(document.documentElement).getPropertyValue('--client-safe-'+x).trim()!=='0px'))issues.push('Native insets reserved twice');
+ if(n){if(n.height>(native?48.5:56.5))issues.push('Bottom navigation too tall');if(Math.abs(f.bottom-n.top)>.5)issues.push('Content and bottom navigation disagree');
   for(const tab of nav.querySelectorAll('a')){const t=rect(tab);if(t.height<43.5||!inside(t,n))issues.push('Navigation tap area clipped');for(const child of tab.children)if(!inside(rect(child),t))issues.push('Navigation item spills out');}
  }
  if(s&&o.left<s.right-.5)issues.push('Content extends behind sidebar');
@@ -38,21 +40,30 @@ function snapshot(){
   if(dialog.scrollTop>0){const filter=dialog.querySelector('.profile-filter'),b=rect(filter);if(!inside(b,r))issues.push('Bottom action cannot scroll into view');
    const x=b.left+b.width/2,y=b.top+b.height/2;if(!filter.contains(doc.elementFromPoint(x,y)))issues.push('Bottom action covered');}
  }
- return {width:innerWidth,height:innerHeight,header:h.height,bottom:n?.height||0,avatar:{button:a,image:p},frame:f,sidebar:s,modal,issues};
+ return {width:innerWidth,height:innerHeight,native,header:h.height,bottom:n?.height||0,avatar:{button:a,image:p},frame:f,sidebar:s,modal,issues};
 }
 
 const report=[];let failures=0;
 try{
- for(const [engine,type,options] of [['chrome',chromium,{channel:'chrome'}],['webkit',webkit,{}]]){
+ for(const [engine,type,options,native] of [['chrome',chromium,{channel:'chrome'},false],['webkit',webkit,{},false],['android',chromium,{channel:'chrome'},true]]){
   const browser=await type.launch({headless:true,...options});
   try{
    for(const [width,height] of [[320,700],[390,844],[768,1024],[834,1194],[1024,768],[1194,834],[1440,1000]]){
-    const context=await browser.newContext({viewport:{width,height},isMobile:engine==='webkit'||width<700,hasTouch:true,deviceScaleFactor:1});
+    const context=await browser.newContext({viewport:{width,height},isMobile:native||engine==='webkit'||width<700,hasTouch:true,deviceScaleFactor:1,...(native?{userAgent:'Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36 LoHoNodeAndroid/1.0.6'}:{})});
     const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(String(error)));
+    let cdp=null;if(native){cdp=await context.newCDPSession(page);await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:{top:32,right:0,bottom:24,left:0}});}
     await page.goto(base+'client.html');
     await page.waitForFunction(()=>document.querySelector('.client-account img')?.complete&&document.querySelector('iframe:not([hidden])')?.contentDocument?.querySelector('.user-card'));
+    if(native){const safeTop=await page.evaluate(()=>{const probe=document.createElement('div');probe.style.paddingTop='env(safe-area-inset-top)';document.body.append(probe);const top=parseFloat(getComputedStyle(probe).paddingTop);probe.remove();return top;});if(safeTop!==32)throw Error('Safe-area emulation did not apply: '+safeTop);}
+    if(!baseline&&!native&&engine==='chrome'&&width===390){
+     const webCdp=await context.newCDPSession(page);await webCdp.send('Emulation.setSafeAreaInsetsOverride',{insets:{top:32,right:0,bottom:24,left:0}});
+     await page.waitForFunction(()=>Math.round(document.querySelector('.client-header').getBoundingClientRect().height)===84&&Math.round(document.querySelector('.client-nav').getBoundingClientRect().height)===80);
+     await webCdp.send('Emulation.setSafeAreaInsetsOverride',{insets:{top:0,right:0,bottom:0,left:0}});
+     await page.waitForFunction(()=>Math.round(document.querySelector('.client-header').getBoundingClientRect().height)===52);
+    }
     await page.evaluate(()=>{document.querySelector('.client-brand strong').textContent='LoHo Node · 很长的服务器名称';document.querySelector('.client-brand small').textContent='very-long-server-name.example.invalid:5000';document.querySelector('.client-live').textContent='连接异常';});
     const normal=await page.evaluate(snapshot);
+    if(native&&[390,1024].includes(width))await page.screenshot({path:path.join(output,engine+'-'+width+'-dashboard.png')});
     await page.evaluate(()=>{const doc=document.querySelector('iframe:not([hidden])').contentDocument;doc.querySelector('.user-card').click();});
     const open=await page.evaluate(snapshot);
     if([390,1024].includes(width))await page.screenshot({path:path.join(output,engine+'-'+width+'-dialog.png')});

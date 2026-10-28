@@ -8,6 +8,9 @@ import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.KeyEvent;
+import android.view.WindowInsets;
+import android.graphics.Insets;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -17,6 +20,8 @@ import android.webkit.WebChromeClient;
 import android.webkit.ConsoleMessage;
 import android.widget.LinearLayout;
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -59,6 +64,7 @@ public final class ZoomCheck extends Instrumentation {
                     require(!browser.getSettings().getDisplayZoomControls(), "Zoom buttons still enabled");
                 } catch (Exception e) { throw new RuntimeException(e); }
             });
+            checkInsets();
             load();
             runOnMainSync(() -> { browser.getLocationOnScreen(location); width = browser.getWidth(); height = browser.getHeight(); });
             double initial = number("visualViewport.scale");
@@ -94,7 +100,7 @@ public final class ZoomCheck extends Instrumentation {
             require(control > initial + .05, "Positive control did not zoom: " + control);
             runOnMainSync(() -> {root.removeAllViews();browser.destroy();browser=appBrowser;root.addView(browser,new LinearLayout.LayoutParams(-1,-1));});
             checkBackNavigation();
-            result.putString("stream", "LOHO_ZOOM_PASS: flat page, four real client iframe tabs and user dialog stay at scale 1; provider-enabled guard passes; tap/scroll work; plain-WebView control scale=" + control + "\nLOHO_BACK_PASS: hardware Back closes top dialog, respects cancel, returns tabs to overview and exits root without replaying browser history\n");
+            result.putString("stream", "LOHO_ZOOM_PASS: flat page, four real client iframe tabs and user dialog stay at scale 1; provider-enabled guard passes; tap/scroll work; plain-WebView control scale=" + control + "\nLOHO_BACK_PASS: hardware Back closes top dialog, respects cancel, returns tabs to overview and exits root without replaying browser history\nLOHO_INSETS_PASS: bars/cutout/IME handled once and consumed; Android header/footer 48px with zero CSS safe-area padding\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", "LOHO_ZOOM_FAIL: " + android.util.Log.getStackTraceString(error));
@@ -102,6 +108,25 @@ public final class ZoomCheck extends Instrumentation {
         }
     }
     private static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
+    private void checkInsets(){
+        runOnMainSync(()->{
+            WindowInsets original=root.getRootWindowInsets();
+            int types=WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.ime();
+            WindowInsets test=new WindowInsets.Builder().setInsets(WindowInsets.Type.systemBars(),Insets.of(11,29,13,19))
+                .setInsets(WindowInsets.Type.displayCutout(),Insets.of(27,0,0,0)).setInsets(WindowInsets.Type.ime(),Insets.of(0,0,0,231)).setVisible(types,true).build();
+            WindowInsets result=root.dispatchApplyWindowInsets(test);
+            require(result.isConsumed(),"Insets forwarded to WebView after native padding");
+            require(root.getPaddingLeft()==27&&root.getPaddingTop()==29&&root.getPaddingRight()==13&&root.getPaddingBottom()==231,"Bars, cutout or keyboard padding incorrect");
+            root.dispatchApplyWindowInsets(new WindowInsets.Builder(test).setInsets(WindowInsets.Type.ime(),Insets.NONE).setVisible(WindowInsets.Type.ime(),false).build());
+            require(root.getPaddingBottom()==19,"Keyboard hide left stale padding");
+            if(original!=null)root.dispatchApplyWindowInsets(original);else root.requestApplyInsets();
+        });
+        waitForIdleSync();
+    }
+    private void screenshot() throws Exception {
+        Bitmap bitmap=getUiAutomation().takeScreenshot();if(bitmap==null)return;
+        try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"viewport.png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}finally{bitmap.recycle();}
+    }
     private void backKey(){sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);waitForIdleSync();SystemClock.sleep(250);}
     private void checkBackNavigation() throws Exception {
         js("NodeViewClientHost.navigate('/node-view/client.html?tab=overview')");
@@ -150,6 +175,7 @@ public final class ZoomCheck extends Instrumentation {
             browser.loadUrl("https://loho.invalid/node-view/client.html");
         });
         waitFor("!!window.NodeViewClientHost && !!document.querySelector('.client-nav')");
+        require("true".equals(js("(()=>{const s=getComputedStyle(document.documentElement),h=document.querySelector('.client-header').getBoundingClientRect(),n=document.querySelector('.client-nav').getBoundingClientRect();return ['top','right','bottom','left'].every(x=>s.getPropertyValue('--client-safe-'+x).trim()==='0px')&&Math.abs(h.height-48)<.5&&Math.abs(n.height-48)<.5})()")),"Android chrome includes duplicate safe areas or excess height");
         String[] routes={"overview","connections","users","notifications"};
         String[] selectors={".user-card",".record",".account","#topic"};
         for(int i=0;i<routes.length;i++){
@@ -165,6 +191,7 @@ public final class ZoomCheck extends Instrumentation {
                 js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.user-card').click()");pinch();
                 require(Math.abs(number("visualViewport.scale")-1)<.02,"User dialog zoomed");
                 js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').close()");
+                screenshot();
             }
         }
     }
