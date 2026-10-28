@@ -1,4 +1,4 @@
-LoHo 完整一键部署 10.1.6
+LoHo 完整一键部署 10.1.7
 
 运行：将 loho-node-onekey.sh 上传到空白 VPS 的 /root/ 后执行：
   sudo bash /root/loho-node-onekey.sh

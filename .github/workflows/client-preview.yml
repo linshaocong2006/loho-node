@@ -26,11 +26,16 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/loho-playwright" --no-audit --no-fund playwright@1.56.1
           "$RUNNER_TEMP/loho-playwright/node_modules/.bin/playwright" install --with-deps webkit
-          git show b7b70b28aa4864ab74e274204d2a0414b75c8dc3:loho-node-onekey.sh > /tmp/loho-baseline.sh
+          git show b36375a8ea922234d35feeaa4a3ff1f439faef3a:loho-node-onekey.sh > /tmp/loho-baseline.sh
           bash /tmp/loho-baseline.sh --extract-source /tmp/loho-baseline
           export LOHO_PLAYWRIGHT="$RUNNER_TEMP/loho-playwright/node_modules/playwright"
           node clients/qa/mobile-layout.mjs /tmp/loho-baseline/www client-previews/baseline --baseline
           node clients/qa/mobile-layout.mjs /tmp/loho-preview/www client-previews/fixed
+      - name: Audit interaction recovery and incremental refresh
+        run: |
+          export LOHO_PLAYWRIGHT="$RUNNER_TEMP/loho-playwright/node_modules/playwright"
+          node clients/qa/audit.mjs /tmp/loho-baseline/www client-previews/audit-baseline --baseline
+          node clients/qa/audit.mjs /tmp/loho-preview/www client-previews/audit-fixed
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
