@@ -3,12 +3,12 @@ set -euo pipefail
 umask 077
 case "${1:-}" in
     --help|-h)
-        echo 'LoHo Node v10.1.6 安装器'
+        echo 'LoHo Node v10.1.7 安装器'
         echo '默认执行；--check 进行检查。'
         exit 0 ;;
 esac
-loho_payload_url='https://raw.githubusercontent.com/linshaocong2006/loho-node/b1cee627f49ef3a76306e50f29a90e312a19e95e/loho-node-onekey.sh'
-loho_payload_sha256='3e9ef47e477e2c73eede104ca1cdf2ae204d3f4023679722e22adba8bbddb8d5'
+loho_payload_url='https://raw.githubusercontent.com/linshaocong2006/loho-node/a3381c243356c6777e635a6cf825dba2ab8e1210/loho-node-onekey.sh'
+loho_payload_sha256='ca1f161d8e0d04dc63316a079ce6641dc70fdc8462453504737d2953e9cf7e7a'
 if ! command -v sha256sum >/dev/null 2>&1; then
     echo '缺少 sha256sum，请先安装 coreutils。' >&2
     exit 1
@@ -17,7 +17,7 @@ fi
 loho_download_dir=$(mktemp -d -t loho-download.XXXXXXXX)
 trap 'rm -rf -- "$loho_download_dir"' EXIT
 loho_installer="$loho_download_dir/loho-node-onekey.sh"
-echo '正在下载 LoHo Node v10.1.6 安装器……'
+echo '正在下载 LoHo Node v10.1.7 安装器……'
 if command -v curl >/dev/null 2>&1; then
     curl -q --fail --show-error --silent --location --retry 3 --connect-timeout 15 --max-time 120 \
         --proto '=https' --proto-redir '=https' --tlsv1.2 \
