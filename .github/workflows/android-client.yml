@@ -1,8 +1,8 @@
 name: Build Android client
 on:
   push:
-    branches: [clients-v1, clients-performance, users-avatars, android-zoom]
-    paths: ['clients/android/**', '.github/workflows/android-client.yml']
+    branches: [clients-v1, clients-performance, users-avatars, android-zoom, zoom-font]
+    paths: ['clients/android/**', 'clients/qa/fixture.js', 'loho-node-onekey.sh', '.github/workflows/android-client.yml']
   workflow_dispatch:
 permissions:
   contents: read

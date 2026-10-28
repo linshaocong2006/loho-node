@@ -6,10 +6,20 @@ loho_tools="$loho_sdk/build-tools/35.0.0"
 loho_platform="$loho_sdk/platforms/android-35/android.jar"
 loho_qa="$PWD/build/gesture-qa"
 mkdir -p "$loho_qa/classes" "$loho_qa/dex"
+bash ../../loho-node-onekey.sh --extract-source "$loho_qa/panel-source"
+mkdir -p "$loho_qa/assets/panel"
+cp -R "$loho_qa/panel-source/www/." "$loho_qa/assets/panel/"
+cp ../qa/fixture.js "$loho_qa/assets/panel/fixture.js"
+python3 - "$loho_qa/assets/panel" <<'PY'
+from pathlib import Path
+import sys
+for page in Path(sys.argv[1]).glob('*.html'):
+    page.write_text(page.read_text().replace('<head>','<head><script src="fixture.js"></script>',1))
+PY
 javac -source 11 -target 11 -classpath "$loho_platform" -d "$loho_qa/classes" qa/src/app/loho/nodeclient/test/ZoomCheck.java
 mapfile -d '' loho_classes < <(find "$loho_qa/classes" -name '*.class' -print0)
 "$loho_tools/d8" --lib "$loho_platform" --min-api 26 --output "$loho_qa/dex" "${loho_classes[@]}"
-"$loho_tools/aapt2" link -I "$loho_platform" --manifest qa/AndroidManifest.xml -o "$loho_qa/check-base.apk"
+"$loho_tools/aapt2" link -I "$loho_platform" --manifest qa/AndroidManifest.xml -A "$loho_qa/assets" -o "$loho_qa/check-base.apk"
 zip -q -j "$loho_qa/check-base.apk" "$loho_qa/dex/classes.dex"
 "$loho_tools/zipalign" -P 16 -f 4 "$loho_qa/check-base.apk" "$loho_qa/check.apk"
 cp build/artifacts/LoHo-Node-unsigned.apk "$loho_qa/app.apk"
