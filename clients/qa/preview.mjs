@@ -16,13 +16,18 @@ try{
   const rpc=(method,params={})=>new Promise((resolve,reject)=>{const next=++id;pending.set(next,{resolve,reject});ws.send(JSON.stringify({id:next,method,params}));});
   const evaluate=async expression=>{const result=await rpc('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(JSON.stringify(result.exceptionDetails));return result.result.value;};
   try{await rpc('Page.enable');await rpc('Runtime.enable');await rpc('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<700});await rpc('Page.navigate',{url});
-   let ready=false;for(let i=0;i<100;i++){ready=await evaluate("(!!document.querySelector('.client-header') && Array.from(document.querySelectorAll('iframe')).some(f=>!!f.contentDocument?.querySelector('.user-card, #accounts .account'))) || (!document.querySelector('#client-outlet') && !!document.querySelector('#accounts .account'))");if(ready)break;await pause(100);}if(!ready)throw Error('Client did not load: '+errors.join('\n'));
+   let ready=false;for(let i=0;i<100;i++){ready=await evaluate("(!!document.querySelector('.client-header') && Array.from(document.querySelectorAll('iframe')).some(f=>!!f.contentDocument?.querySelector('.user-card, #accounts .account'))) || (!document.querySelector('#client-outlet') && !!document.querySelector('#accounts .account, .record'))");if(ready)break;await pause(100);}if(!ready)throw Error('Client did not load: '+errors.join('\n'));
    await test(evaluate,rpc);await pause(300);const image=await rpc('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(output,name+'.png'),Buffer.from(image.data,'base64'));
    if(errors.length)throw Error(errors.join('\n'));const overflow=await evaluate('document.documentElement.scrollWidth > innerWidth + 1');if(overflow)throw Error(name+' overflows horizontally');console.log(name+': layout and interaction checks passed');
   }finally{ws.close();await fetch('http://127.0.0.1:'+debugPort+'/json/close/'+target.id);}
  }
  const base='http://127.0.0.1:'+port+'/node-view/';
  const activeDoc="document.querySelector('iframe:not([hidden])').contentDocument";
+ await screen('web-connection-filters',base+'connections.html',1440,900,async evaluate=>{
+  const typography=await evaluate(`Array.from(document.querySelectorAll('.filters .select-wrap')).map(box=>{const label=getComputedStyle(box.querySelector('span')),value=getComputedStyle(box.querySelector('select'));return {text:box.querySelector('span').textContent,label:{size:label.fontSize,font:label.fontFamily,weight:label.fontWeight,lineHeight:label.lineHeight},value:{size:value.fontSize,font:value.fontFamily,weight:value.fontWeight,lineHeight:value.lineHeight}}})`);
+  if(typography.length!==3||typography.some(x=>x.label.size!=='13px'||JSON.stringify(x.label)!==JSON.stringify(x.value)))throw Error('Web filter labels differ from selected values: '+JSON.stringify(typography));
+  fs.writeFileSync(path.join(output,'web-filter-typography.json'),JSON.stringify(typography,null,2));
+ });
  async function until(evaluate,expression,message){for(let i=0;i<100;i++){if(await evaluate(expression))return;await pause(100);}throw Error(message+' '+JSON.stringify(await evaluate("({url:location.href,current:window.NodeViewClientHost?.current,frames:Array.from(document.querySelectorAll('iframe')).map(f=>({src:f.src,ready:f.contentDocument?.readyState,reads:f.contentWindow.__qaFetches}))})")));}
  await screen('phone-dashboard',base+'client.html',390,844,async evaluate=>{
   if(!await evaluate("getComputedStyle(document.querySelector('.client-nav')).display==='flex' && document.querySelectorAll('.client-nav a').length===4"))throw Error('Phone navigation');
