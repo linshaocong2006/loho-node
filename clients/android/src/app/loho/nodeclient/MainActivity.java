@@ -19,6 +19,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.RenderProcessGoneDetail;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -36,6 +37,7 @@ public final class MainActivity extends Activity {
     private Uri origin;
     private boolean showingError;
     private boolean resetHistory;
+    private boolean backPending;
     private final int background = Color.rgb(16, 27, 24);
     private final int text = Color.rgb(228, 237, 223);
 
@@ -86,7 +88,7 @@ public final class MainActivity extends Activity {
         return new URI("https", null, uri.getHost(), uri.getPort(), null, null, null).toASCIIString();
     }
     private void showSetup() {
-        if (browser != null) { browser.stopLoading(); browser.onPause(); }
+        if (browser != null) { setAppPaused(true); browser.stopLoading(); browser.onPause(); }
         root.removeAllViews(); origin = null;
         ScrollView scroll = new ScrollView(this); LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(24), dp(30), dp(24), dp(20));
@@ -136,7 +138,8 @@ public final class MainActivity extends Activity {
         settings.setAllowFileAccess(false); settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSupportMultipleWindows(false); settings.setSafeBrowsingEnabled(true);
-        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0");
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0.1");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(browser, false);
         browser.setWebViewClient(new WebViewClient() {
@@ -159,17 +162,30 @@ public final class MainActivity extends Activity {
                 if (request.isForMainFrame() && response.getStatusCode() >= 400)
                     error(response.getStatusCode() == 404 ? "未找到客户端入口，请先把服务器升级到 v10.0.0。" : "服务器返回 HTTP " + response.getStatusCode() + "，请稍后重试。");
             }
-            @Override public void onPageFinished(WebView view, String url) { CookieManager.getInstance().flush(); if (resetHistory && origin != null && sameOrigin(Uri.parse(url))) { view.clearHistory(); resetHistory = false; } }
+            @Override public void onPageFinished(WebView view, String url) { if (resetHistory && origin != null && sameOrigin(Uri.parse(url))) { view.clearHistory(); resetHistory = false; } }
+            @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                root.removeView(view); view.destroy(); if (browser == view) browser = null;
+                error("页面运行已中断，点击重试即可重新打开。服务器数据不会丢失。"); return true;
+            }
         });
     }
     private void error(String message) {
         if (showingError || isFinishing() || origin == null) return; showingError = true;
         new AlertDialog.Builder(this).setTitle("连接提示").setMessage(message)
             .setNegativeButton("服务器设置", (d, w) -> { showingError = false; showSetup(); })
-            .setPositiveButton("重试", (d, w) -> { showingError = false; if (origin != null) browser.loadUrl(origin.toString() + "/node-view/client.html"); })
+            .setPositiveButton("重试", (d, w) -> { showingError = false; if (origin != null) connect(origin.toString()); })
             .setOnCancelListener(d -> showingError = false).show();
     }
     @Override public void onBackPressed() {
+        if (browser != null && origin != null) {
+            if (backPending) return; backPending = true;
+            browser.evaluateJavascript("Boolean(window.NodeViewClientHost && window.NodeViewClientHost.back())", value -> {
+                backPending = false; if (!"true".equals(value)) fallbackBack();
+            }); return;
+        }
+        fallbackBack();
+    }
+    private void fallbackBack() {
         if (browser != null && origin != null) {
             android.webkit.WebBackForwardList history = browser.copyBackForwardList();
             for (int i = history.getCurrentIndex() - 1; i >= 0; i--) {
@@ -181,7 +197,10 @@ public final class MainActivity extends Activity {
             showSetup();
         } else super.onBackPressed();
     }
-    @Override public void onPause() { super.onPause(); if (browser != null) { browser.onPause(); browser.pauseTimers(); CookieManager.getInstance().flush(); } }
-    @Override public void onResume() { super.onResume(); if (browser != null && origin != null) { browser.onResume(); browser.resumeTimers(); } }
+    private void setAppPaused(boolean paused) {
+        if (browser != null) browser.evaluateJavascript("window.NodeViewClientHost && window.NodeViewClientHost.setPaused(" + paused + ")", null);
+    }
+    @Override public void onPause() { super.onPause(); if (browser != null) { setAppPaused(true); browser.onPause(); browser.pauseTimers(); CookieManager.getInstance().flush(); } }
+    @Override public void onResume() { super.onResume(); if (browser != null && origin != null) { browser.onResume(); browser.resumeTimers(); setAppPaused(false); } }
     @Override public void onDestroy() { if (browser != null) { root.removeView(browser); browser.destroy(); browser = null; } super.onDestroy(); }
 }

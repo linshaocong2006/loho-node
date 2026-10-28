@@ -1,7 +1,7 @@
 name: Build Android client
 on:
   push:
-    branches: [clients-v1]
+    branches: [clients-v1, clients-performance]
     paths: ['clients/android/**', '.github/workflows/android-client.yml']
   workflow_dispatch:
 permissions:
