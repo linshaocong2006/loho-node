@@ -187,6 +187,7 @@ public final class ZoomCheck extends Instrumentation {
         for(int i=0;i<routes.length;i++){
             js("NodeViewClientHost.navigate('/node-view/client.html?tab="+routes[i]+"')");
             waitFor("!!document.querySelector('iframe:not([hidden])')?.contentDocument?.querySelector('"+selectors[i]+"')");
+            require("true".equals(js("(()=>{const o=document.querySelector('#client-outlet').getBoundingClientRect(),f=document.querySelector('iframe:not([hidden])').getBoundingClientRect(),h=document.querySelector('.client-header').getBoundingClientRect(),n=document.querySelector('.client-nav').getBoundingClientRect();return Math.abs(o.top-h.bottom)<1&&Math.abs(o.bottom-n.top)<1&&Math.abs(o.width-innerWidth)<1&&Math.abs(f.height-o.height)<1&&Math.abs(f.width-o.width)<1})()")),"Client iframe does not fill the space between navigation bars");
             if(i==0)screenshot();
             // Remove the CSS fallback so this specifically proves the native guard.
             js("document.documentElement.style.setProperty('touch-action','auto','important');document.querySelector('iframe:not([hidden])').contentDocument.documentElement.style.setProperty('touch-action','auto','important')");
