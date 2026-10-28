@@ -61,4 +61,8 @@ adb shell am instrument -w app.loho.nodeclient.test/.ZoomCheck | tee "$loho_qa/r
 grep -q 'LOHO_ZOOM_PASS' "$loho_qa/result.txt"
 grep -q 'LOHO_BACK_PASS' "$loho_qa/result.txt"
 grep -q 'LOHO_INSETS_PASS' "$loho_qa/result.txt"
+# The API 30 image restricts shell access to app-specific external storage.
+# These disposable google_apis emulator images allow root for artifact collection.
+adb root
+adb wait-for-device
 adb pull /sdcard/Android/data/app.loho.nodeclient/files/viewport.png "$loho_qa/viewport.png"

@@ -191,6 +191,7 @@ public final class ZoomCheck extends Instrumentation {
                 js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.user-card').click()");pinch();
                 require(Math.abs(number("visualViewport.scale")-1)<.02,"User dialog zoomed");
                 js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').close()");
+                waitFor("!document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').open");
                 screenshot();
             }
         }
