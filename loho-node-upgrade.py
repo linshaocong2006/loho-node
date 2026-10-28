@@ -376,7 +376,7 @@ def prepare(files,auth,domain,port,old):
     # Fresh installations already recorded the active certificate; never erase it
     # when an older installer-state file is absent.
     certificate=next(iter(certificates)) if len(certificates)==1 else old.get('certificate')
-    changes[RELEASE]=encoded({'version':VERSION,'installed':time.time(),'assets':registry,'certificate':certificate,'features':['sessions','identity-timeline','split-refresh','rule-preview','system-health','filter-memory','versioned-assets']+(['multi-user-rules','theme-switch','unified-header','mobile-client','retained-client-tabs'] if '_experience' in files else [])})
+    changes[RELEASE]=encoded({'version':VERSION,'installed':time.time(),'assets':registry,'certificate':certificate,'features':['sessions','identity-timeline','split-refresh','rule-preview','system-health','filter-memory','versioned-assets']+(['multi-user-rules','theme-switch','unified-header','mobile-client','retained-client-tabs','server-avatars','user-pause'] if '_experience' in files else [])})
     for path,raw in changes.items():
         if path.suffix=='.py':ast.parse(raw.decode(),feature_version=(3,8))
     return changes
