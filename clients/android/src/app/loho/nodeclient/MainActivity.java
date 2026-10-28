@@ -110,7 +110,9 @@ public final class MainActivity extends Activity {
                 .setMessage("仅移除地址，不会删除服务器数据或退出已保存的登录。")
                 .setNegativeButton("取消", null).setPositiveButton("移除", (d, w) -> {
                     List<String> remaining = servers(); remaining.remove(server);
-                    prefs.edit().putString("list", new JSONArray(remaining).toString()).apply(); showSetup();
+                    SharedPreferences.Editor update = prefs.edit().putString("list", new JSONArray(remaining).toString());
+                    if (server.equals(prefs.getString("last", ""))) update.remove("last");
+                    update.apply(); showSetup();
                 }).show(); return true; });
         }
     }
