@@ -7,8 +7,8 @@ case "${1:-}" in
         echo '默认执行；--check 进行检查。'
         exit 0 ;;
 esac
-loho_payload_url='https://raw.githubusercontent.com/linshaocong2006/loho-node/9cdde3297764247f1543fe236468808e1d6b07e1/loho-node-onekey.sh'
-loho_payload_sha256='8c247966837a9fb3e822cc3e4208095b49869942acebc4964752a605e4046b2e'
+loho_payload_url='https://raw.githubusercontent.com/linshaocong2006/loho-node/1dedcc6987419e441be247fd46835caf49caafec/loho-node-onekey.sh'
+loho_payload_sha256='8bc4e1bda9da5fcf7b01b127eacddf1b56f23781e3aed81c9795ce221d7730f6'
 if ! command -v sha256sum >/dev/null 2>&1; then
     echo '缺少 sha256sum，请先安装 coreutils。' >&2
     exit 1
