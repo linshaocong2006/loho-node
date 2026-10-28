@@ -7,6 +7,8 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.MotionEvent;
+import android.view.KeyEvent;
+import android.net.Uri;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
@@ -26,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class ZoomCheck extends Instrumentation {
     private Activity activity;
     private WebView browser;
+    private WebView appBrowser;
     private final int[] location = new int[2];
     private int width, height;
     private LinearLayout root;
@@ -46,6 +49,8 @@ public final class ZoomCheck extends Instrumentation {
                     Method create = activity.getClass().getDeclaredMethod("createBrowser"); create.setAccessible(true); create.invoke(activity);
                     Field viewField = activity.getClass().getDeclaredField("browser"); viewField.setAccessible(true);
                     browser = (WebView) viewField.get(activity);
+                    appBrowser = browser;
+                    Field originField=activity.getClass().getDeclaredField("origin");originField.setAccessible(true);originField.set(activity,Uri.parse("https://loho.invalid"));
                     Field rootField = activity.getClass().getDeclaredField("root"); rootField.setAccessible(true);
                     root = (LinearLayout) rootField.get(activity);
                     root.removeAllViews(); root.addView(browser, new LinearLayout.LayoutParams(-1, -1));
@@ -87,8 +92,9 @@ public final class ZoomCheck extends Instrumentation {
             pinch();
             double control = number("visualViewport.scale");
             require(control > initial + .05, "Positive control did not zoom: " + control);
-            result.putString("stream", "LOHO_ZOOM_PASS: flat page, four real client iframe tabs and user dialog stay at scale 1; provider-enabled guard passes; tap/scroll work; plain-WebView control scale=" + control + "\n");
-            runOnMainSync(() -> {browser.destroy();activity.finish();});
+            runOnMainSync(() -> {root.removeAllViews();browser.destroy();browser=appBrowser;root.addView(browser,new LinearLayout.LayoutParams(-1,-1));});
+            checkBackNavigation();
+            result.putString("stream", "LOHO_ZOOM_PASS: flat page, four real client iframe tabs and user dialog stay at scale 1; provider-enabled guard passes; tap/scroll work; plain-WebView control scale=" + control + "\nLOHO_BACK_PASS: hardware Back closes top dialog, respects cancel, returns tabs to overview and exits root without replaying browser history\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", "LOHO_ZOOM_FAIL: " + android.util.Log.getStackTraceString(error));
@@ -96,6 +102,32 @@ public final class ZoomCheck extends Instrumentation {
         }
     }
     private static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
+    private void backKey(){sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);waitForIdleSync();SystemClock.sleep(250);}
+    private void checkBackNavigation() throws Exception {
+        js("NodeViewClientHost.navigate('/node-view/client.html?tab=overview')");
+        waitFor("!!document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.user-card')");
+        js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.user-card').click();document.querySelector('.client-account').click()");
+        backKey();
+        require("true".equals(js("!document.querySelector('.client-tools-dialog').open && document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').open")),"Back did not close the topmost parent dialog first");
+        js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').addEventListener('cancel',e=>e.preventDefault(),{once:true})");
+        backKey();
+        require("true".equals(js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').open")),"Back ignored cancellation while a dialog was busy");
+        backKey();
+        require("true".equals(js("!document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').open && NodeViewClientHost.current==='overview'")),"Back did not close user dialog");
+        for(String route:new String[]{"connections","users","notifications"}){
+            js("NodeViewClientHost.navigate('/node-view/client.html?tab="+route+"')");
+            waitFor("NodeViewClientHost.current==='"+route+"'");backKey();
+            require("true".equals(js("NodeViewClientHost.current==='overview'")),"Back did not return "+route+" to overview");
+        }
+        require(number("history.length")>1,"Test did not create prior tab history");
+        backKey();
+        for(int i=0;i<40;i++){
+            java.util.concurrent.atomic.AtomicBoolean exited=new java.util.concurrent.atomic.AtomicBoolean();
+            runOnMainSync(()->exited.set(activity.isFinishing()||activity.isDestroyed()));
+            if(exited.get())return;SystemClock.sleep(100);
+        }
+        throw new AssertionError("Root Back replayed tab history instead of exiting Activity");
+    }
     private void checkRealClient() throws Exception {
         runOnMainSync(() -> {
             browser.setWebChromeClient(new WebChromeClient(){
@@ -128,7 +160,7 @@ public final class ZoomCheck extends Instrumentation {
             pinch();
             require(Math.abs(number("visualViewport.scale")-1)<.02,"Root zoomed on "+routes[i]);
             require(Math.abs(number("document.querySelector('iframe:not([hidden])').contentWindow.visualViewport.scale")-1)<.02,"Iframe zoomed on "+routes[i]);
-            if(i==1)require("true".equals(js("(()=>{const d=document.querySelector('iframe:not([hidden])').contentDocument,w=d.defaultView,s=['search','user','source','window'].map(id=>w.getComputedStyle(d.getElementById(id)));return s.every(x=>x.fontSize==='14px'&&x.fontWeight==='400')&&new Set(s.map(x=>x.fontFamily)).size===1})()")),"Android filter fonts differ");
+            if(i==1)require("true".equals(js("(()=>{const d=document.querySelector('iframe:not([hidden])').contentDocument,w=d.defaultView,s=['search','user','source','window'].map(id=>w.getComputedStyle(d.getElementById(id)));return s.every(x=>x.fontSize==='13px'&&x.fontWeight==='400')&&new Set(s.map(x=>x.fontFamily)).size===1})()")),"Android filter fonts differ");
             if(i==0){
                 js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.user-card').click()");pinch();
                 require(Math.abs(number("visualViewport.scale")-1)<.02,"User dialog zoomed");

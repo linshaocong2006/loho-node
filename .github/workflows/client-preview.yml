@@ -1,7 +1,7 @@
 name: Client UI preview
 on:
   push:
-    branches: [clients-v1, clients-performance, users-avatars, layout-polish, mobile-layout, zoom-font]
+    branches: [clients-v1, clients-performance, users-avatars, layout-polish, mobile-layout, zoom-font, back-font]
     paths: ['clients/qa/**', '.github/workflows/client-preview.yml', 'loho-node-onekey.sh']
   workflow_dispatch:
 permissions:
