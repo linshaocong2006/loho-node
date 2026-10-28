@@ -21,7 +21,7 @@ import time
 import types
 from notify_upgrade_core import command,replace,deployment
 
-VERSION='10.1.6'
+VERSION='10.1.7'
 APP=Path('/opt/loho-node-view')
 DATA=Path('/var/lib/loho-node-view')
 TRAFFICROOT=Path('/var/lib/loho-node-traffic')
@@ -298,6 +298,7 @@ def prepare(files,auth,domain,port,old):
             if count!=1:raise ValueError('通知规则页面结构不兼容。')
     resources={name:files[name].encode() for name in ('panel-core.js','iteration.css','system.js','login.js','auth.css','session.js','fast-core.js','performance.css')}
     resources.update({'overview-fast.js':files['overview-v8.js'].encode(),'connections-fast.js':files['connections-v8.js'].encode(),'query-fast.js':files['query-v8.js'].encode()})
+    if 'identity-v1.js' in files:resources['identity-v1.js']=files['identity-v1.js'].encode()
     if 'notifications.html' in pages:resources['notifications.js']=files['notifications-v8.js'].encode()
     for name,text in list(pages.items()):
         if name!='login.html':
@@ -370,7 +371,7 @@ def upgrade(check=False):
     files=json.loads(gzip.decompress(base64.b64decode(PAYLOAD)));auth,auth_module,domain,port,old=preflight(files)
     changes=prepare(files,auth,domain,port,old)
     if check:print('兼容性检查通过；未安装升级。');return
-    print('本次更新：连接筛选标签与选中值统一字号、字体和字重；网页、安卓和 iPad 同步生效，安卓无需重装。',flush=True)
+    print('本次更新：概览数据分批显示，优化连接列表刷新，修复历史回车查询、改名同步及保存交互；安卓 1.0.6 无需重装。',flush=True)
     backup=BACKUPS/('iteration-'+time.strftime('%Y%m%d-%H%M%S')+'-'+secrets.token_hex(4));backup.mkdir(parents=True,mode=0o700)
     before={};written=[];paused=False;stopped=[];database_backups=[]
     units=(MANAGER,COLLECTOR,TRAFFIC,AUTH)+((NOTIFY,) if APP/'notify.py' in changes else ())

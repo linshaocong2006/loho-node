@@ -20,7 +20,7 @@ import performance_upgrade_core as perf
 import traffic_upgrade_core as usage
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '10.1.6'
+VERSION = '10.1.7'
 PLACEHOLDER = 'd' * 64
 
 
@@ -56,6 +56,7 @@ def payload():
         packaged[name] = (ROOT/'web'/name).read_text()
     packaged['system.html'] = packaged['system.html'].replace('升级前记录按原名称保留；升级后的连接按固定用户 ID 关联。', '连接按固定用户 ID 关联。')
     packaged['avatar_store.py']=(ROOT/'avatar_store.py').read_text()
+    packaged['identity-v1.js']=(ROOT/'web/identity-v1.js').read_text()
     packaged['_manager_features']=(ROOT/'manager.py').read_text()
     packaged['_experience']=(ROOT/'experience_core.py').read_text()
     packaged['notify.py']=(ROOT/'notify.py').read_text()
