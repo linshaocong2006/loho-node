@@ -72,7 +72,8 @@ try{
  await scenario('saveFeedbackAndDialog',async page=>{
   await page.addInitScript(()=>window.__qaDelays={'/node-view/notify/api/change':750});
   await page.goto(base+'notifications.html');await page.waitForFunction(()=>!document.getElementById('test').disabled&&!!document.getElementById('topic').value);
-  await page.locator('#topic').fill('saved-topic');const draftVisible=(await page.locator('#channel-state').textContent()).includes('未保存修改');
+  await page.locator('#topic').fill('topic-for-save');const draftVisible=(await page.locator('#channel-state').textContent()).includes('未保存修改');
+  if(!await page.locator('#channel-form').evaluate(form=>form.checkValidity()))throw Error('QA settings must satisfy form validation');
   await page.locator('#channel-form button[type=submit]').click();const inputsLocked=await page.locator('#topic').isDisabled();
   if(!inputsLocked)await page.locator('#topic').fill('typed-during-save');
   await page.waitForFunction(()=>document.getElementById('notice').textContent.includes('推送设置已保存'));
@@ -81,7 +82,7 @@ try{
   await page.locator('#rule-form button').filter({hasText:'保存规则'}).click();await page.keyboard.press('Escape');
   const dialogProtected=await page.locator('#rule-dialog').evaluate(node=>node.open);
   await page.waitForTimeout(1000);
-  return {passed:draftVisible&&inputsLocked&&savedTopic==='saved-topic'&&dialogProtected,draftVisible,inputsLocked,savedTopic,dialogProtected};
+  return {passed:draftVisible&&inputsLocked&&savedTopic==='topic-for-save'&&dialogProtected,draftVisible,inputsLocked,savedTopic,dialogProtected};
  });
 }finally{await browser.close();server.close();fs.writeFileSync(path.join(output,'audit.json'),JSON.stringify(report,null,2));}
 const failures=Object.values(report).filter(result=>!result.passed).length;
