@@ -20,13 +20,13 @@ jobs:
           export PATH="$JAVA_HOME/bin:$PATH"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
           bash clients/android/build.sh
-      - name: Native zoom gesture check
-        timeout-minutes: 8
-        run: bash clients/android/qa/run.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: loho-node-android-unsigned
           path: clients/android/build/artifacts/*
           if-no-files-found: error
           retention-days: 3
+      - name: Native zoom gesture check
+        timeout-minutes: 8
+        run: bash clients/android/qa/run.sh
 

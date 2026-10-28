@@ -18,11 +18,11 @@ for loho_apk in "$loho_qa/app.apk" "$loho_qa/check.apk"; do
     "$loho_tools/apksigner" sign --ks "$loho_qa/temporary.jks" --ks-pass pass:temporary "$loho_apk"
 done
 "$loho_sdk/cmdline-tools/latest/bin/sdkmanager" 'emulator' 'system-images;android-30;google_apis;x86_64'
-echo no | "$loho_sdk/cmdline-tools/latest/bin/avdmanager" create avd -n loho-gesture -k 'system-images;android-30;google_apis;x86_64' --force
+echo no | "$loho_sdk/cmdline-tools/latest/bin/avdmanager" create avd -n loho-gesture -k 'system-images;android-30;google_apis;x86_64' --device pixel_2 --force
 sudo chmod 666 /dev/kvm
-"$loho_sdk/emulator/emulator" -avd loho-gesture -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -camera-back none -camera-front none > "$loho_qa/emulator.log" 2>&1 &
+"$loho_sdk/emulator/emulator" -avd loho-gesture -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -camera-back none -camera-front none -memory 2048 -cores 2 -partition-size 1024 > "$loho_qa/emulator.log" 2>&1 &
 loho_emulator_pid=$!
-trap 'kill "$loho_emulator_pid" 2>/dev/null || true' EXIT
+trap 'loho_status=$?; if [[ "$loho_status" != 0 ]]; then cat "$loho_qa/emulator.log"; fi; kill "$loho_emulator_pid" 2>/dev/null || true' EXIT
 export PATH="$loho_sdk/platform-tools:$PATH"
 timeout 120 adb wait-for-device
 loho_booted=false

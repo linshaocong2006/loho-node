@@ -22,7 +22,7 @@ public final class ZoomCheck extends Instrumentation {
     private final int[] location = new int[2];
     private int width, height;
     private static final String PAGE = "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
-        + "<style>body{margin:0;font:16px sans-serif}button,input{font:inherit;height:48px}main{height:2400px;background:#d7e5df}</style>"
+        + "<style>body{margin:0;font:16px sans-serif}button,input{font:inherit;height:48px}button{width:96px}main{height:2400px;background:#d7e5df}</style>"
         + "<button onclick='window.taps=(window.taps||0)+1'>Tap</button><input placeholder='Input'><main>Gesture target</main>";
 
     @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
