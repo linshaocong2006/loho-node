@@ -26,7 +26,7 @@ try{
  }
  const base='http://127.0.0.1:'+port+'/node-view/';
  const activeDoc="document.querySelector('iframe:not([hidden])').contentDocument";
- async function until(evaluate,expression,message){for(let i=0;i<100;i++){if(await evaluate(expression))return;await pause(100);}throw Error(message);}
+ async function until(evaluate,expression,message){for(let i=0;i<100;i++){if(await evaluate(expression))return;await pause(100);}throw Error(message+' '+JSON.stringify(await evaluate("({url:location.href,current:window.NodeViewClientHost?.current,frames:Array.from(document.querySelectorAll('iframe')).map(f=>({src:f.src,ready:f.contentDocument?.readyState,reads:f.contentWindow.__qaFetches}))})")));}
  await screen('phone-dashboard',base+'client.html',390,844,async evaluate=>{
   if(!await evaluate("getComputedStyle(document.querySelector('.client-nav')).display==='flex' && document.querySelectorAll('.client-nav a').length===4"))throw Error('Phone navigation');
   await evaluate("document.querySelector('.client-account').click()");if(!await evaluate("document.querySelector('.client-tools-dialog').open"))throw Error('Phone settings');await evaluate("document.querySelector('.client-tools-dialog').close()");
