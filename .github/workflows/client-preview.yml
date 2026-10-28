@@ -1,7 +1,7 @@
 name: Client UI preview
 on:
   push:
-    branches: [clients-v1, clients-performance, users-avatars, layout-polish]
+    branches: [clients-v1, clients-performance, users-avatars, layout-polish, mobile-layout]
     paths: ['clients/qa/**', '.github/workflows/client-preview.yml', 'loho-node-onekey.sh']
   workflow_dispatch:
 permissions:
@@ -9,11 +9,12 @@ permissions:
 jobs:
   preview:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Render real phone and iPad layouts
         run: |
           sudo apt-get update -qq
@@ -21,6 +22,15 @@ jobs:
           bash loho-node-onekey.sh --extract-source /tmp/loho-preview
           python3 clients/qa/check_profiles.py /tmp/loho-preview
           node clients/qa/preview.mjs /tmp/loho-preview/www client-previews
+      - name: Verify modal bounds and avatars in Chrome and WebKit
+        run: |
+          npm install --prefix "$RUNNER_TEMP/loho-playwright" --no-audit --no-fund playwright@1.56.1
+          "$RUNNER_TEMP/loho-playwright/node_modules/.bin/playwright" install --with-deps webkit
+          git show 9e93ad998392e00c8910cee5553a0374d6ca5e12:loho-node-onekey.sh > /tmp/loho-baseline.sh
+          bash /tmp/loho-baseline.sh --extract-source /tmp/loho-baseline
+          export LOHO_PLAYWRIGHT="$RUNNER_TEMP/loho-playwright/node_modules/playwright"
+          node clients/qa/mobile-layout.mjs /tmp/loho-baseline/www client-previews/baseline --baseline
+          node clients/qa/mobile-layout.mjs /tmp/loho-preview/www client-previews/fixed
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

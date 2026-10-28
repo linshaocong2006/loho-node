@@ -1,36 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import http from 'node:http';
-import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
-import {fileURLToPath} from 'node:url';
-const here=path.dirname(fileURLToPath(import.meta.url)),root=path.resolve(process.argv[2]),output=path.resolve(process.argv[3]);fs.mkdirSync(output,{recursive:true});
-const fixture=fs.readFileSync(path.join(here,'fixture.js'));
-const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.webmanifest':'application/manifest+json'};
-const qaUsers=['ADMIN','LoHo','Phone','Tablet','Guest','Work'].map((label,i)=>({key:'demo-'+i,label,enabled:i!==4,masked:'••••••••-example'}));
-const photos=new Map();let rosterRevision=0;
-const profileInfo=(kind,key='')=>{const raw=photos.get(kind+':'+key),version=raw?createHash('sha256').update(raw).digest('hex').slice(0,24):'';return {version,url:version?'/node-view/manager/api/avatar?'+new URLSearchParams({kind,key,v:version}):''};};
-const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
-const server=http.createServer(async(req,res)=>{try{
- const url=new URL(req.url,'http://localhost'),pathname=decodeURIComponent(url.pathname);
- if(pathname==='/node-view/fixture.js'){res.setHeader('Content-Type','application/javascript');res.end(fixture);return;}
- if(pathname==='/node-view/manager/api/profiles'){json(res,200,{admin:{...profileInfo('admin'),label:'demo-admin'},users:Object.fromEntries(qaUsers.map(u=>[u.key,profileInfo('user',u.key)])),csrf:'fixture'});return;}
- if(pathname==='/node-view/manager/api/avatar'){const raw=photos.get(url.searchParams.get('kind')+':'+url.searchParams.get('key'));if(!raw){res.writeHead(404);res.end();return;}res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store'});res.end(raw);return;}
- if(pathname==='/node-view/manager/api/users'){json(res,200,{users:qaUsers,csrf:'fixture',revision:'qa-'+rosterRevision,busy:false});return;}
- if(pathname==='/node-view/manager/api/job'){json(res,200,{status:'done',message:'已应用。'});return;}
- if(req.method==='POST'&&['/node-view/manager/api/profile','/node-view/manager/api/change'].includes(pathname)){
-  let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);
-  if(req.headers['x-csrf-token']!=='fixture'){json(res,403,{error:'CSRF'});return;}
-  if(pathname.endsWith('/profile')){if(body.version!==profileInfo(body.kind,body.key).version){json(res,409,{error:'头像已更新'});return;}const key=body.kind+':'+body.key;if(body.image===null)photos.delete(key);else photos.set(key,Buffer.from(body.image,'base64'));json(res,200,profileInfo(body.kind,body.key));return;}
-  const user=qaUsers.find(u=>u.key===body.key);if(!user||body.revision!=='qa-'+rosterRevision||!['enable','disable'].includes(body.action)){json(res,409,{error:'change'});return;}user.enabled=body.action==='enable';rosterRevision++;json(res,202,{job:'qa-job'});return;
- }
- if(!pathname.startsWith('/node-view/'))throw Error('route');const file=path.resolve(root,pathname.slice('/node-view/'.length)||'index.html');if(!file.startsWith(root+path.sep))throw Error('path');let body=fs.readFileSync(file);
- if(file.endsWith('.html'))body=Buffer.from(body.toString().replace('<head>','<head><script src="fixture.js"></script>'));
- res.setHeader('Content-Type',mime[path.extname(file)]||'application/octet-stream');
- if(file.endsWith('.html')&&!file.endsWith('login.html')){res.setHeader('X-Frame-Options',file.endsWith('client.html')?'DENY':'SAMEORIGIN');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors "+(file.endsWith('client.html')?"'none'":"'self'"));}
- res.end(body);
- }catch(error){res.writeHead(404);res.end('Not found');}});
+import {createFixtureServer} from './server.mjs';
+const root=path.resolve(process.argv[2]),output=path.resolve(process.argv[3]);fs.mkdirSync(output,{recursive:true});
+const {server,qaUsers,bumpRoster}=createFixtureServer(root);
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port,profile=fs.mkdtempSync(path.join(os.tmpdir(),'loho-chrome-'));
 const chrome=spawn(process.env.CHROME_BIN||'google-chrome',['--headless=new','--no-sandbox','--disable-gpu','--hide-scrollbars','--no-first-run','--disable-dev-shm-usage','--disable-background-networking','--password-store=basic','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:['ignore','ignore','pipe']});let chromeLog='';chrome.stderr.on('data',d=>chromeLog+=d.toString());
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));let debugPort;
@@ -42,7 +16,7 @@ try{
   const rpc=(method,params={})=>new Promise((resolve,reject)=>{const next=++id;pending.set(next,{resolve,reject});ws.send(JSON.stringify({id:next,method,params}));});
   const evaluate=async expression=>{const result=await rpc('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(JSON.stringify(result.exceptionDetails));return result.result.value;};
   try{await rpc('Page.enable');await rpc('Runtime.enable');await rpc('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<700});await rpc('Page.navigate',{url});
-   let ready=false;for(let i=0;i<100;i++){ready=await evaluate("(!!document.querySelector('.client-header') && Array.from(document.querySelectorAll('iframe')).some(f=>!!f.contentDocument?.querySelector('.user-card, .client-user-insight'))) || (!document.querySelector('#client-outlet') && !!document.querySelector('#accounts .account'))");if(ready)break;await pause(100);}if(!ready)throw Error('Client did not load: '+errors.join('\n'));
+   let ready=false;for(let i=0;i<100;i++){ready=await evaluate("(!!document.querySelector('.client-header') && Array.from(document.querySelectorAll('iframe')).some(f=>!!f.contentDocument?.querySelector('.user-card, #accounts .account'))) || (!document.querySelector('#client-outlet') && !!document.querySelector('#accounts .account'))");if(ready)break;await pause(100);}if(!ready)throw Error('Client did not load: '+errors.join('\n'));
    await test(evaluate,rpc);await pause(300);const image=await rpc('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(output,name+'.png'),Buffer.from(image.data,'base64'));
    if(errors.length)throw Error(errors.join('\n'));const overflow=await evaluate('document.documentElement.scrollWidth > innerWidth + 1');if(overflow)throw Error(name+' overflows horizontally');console.log(name+': layout and interaction checks passed');
   }finally{ws.close();await fetch('http://127.0.0.1:'+debugPort+'/json/close/'+target.id);}
@@ -122,7 +96,7 @@ try{
   await evaluate("document.querySelector('.account-menu').open=true;document.querySelector('.account-avatar-action').click()");await until(evaluate,"document.querySelector('.avatar-editor-dialog')?.open",'Desktop avatar editor');
  });
  // Exercise the screenshot's short names, plus long Latin and Chinese labels.
- qaUsers.splice(0,qaUsers.length,...['JWX','ZSM','GYP','LJY','GULING','LIWEI','ABCDEFGHIJKLMNOPQRSTUVWXYZ123456','中文用户名测试'].map((label,i)=>({key:'demo-'+i,label,enabled:i!==4,masked:'••••••••-ab123456'})));rosterRevision++;
+ qaUsers.splice(0,qaUsers.length,...['JWX','ZSM','GYP','LJY','GULING','LIWEI','ABCDEFGHIJKLMNOPQRSTUVWXYZ123456','中文用户名测试'].map((label,i)=>({key:'demo-'+i,label,enabled:i!==4,masked:'••••••••-ab123456'})));bumpRoster();
  await screen('responsive-user-list',base+'client.html?tab=users',1024,900,async(evaluate,rpc)=>{
   await until(evaluate,activeDoc+".querySelectorAll('#accounts > .account').length===8",'Responsive roster');
   const report=[];
