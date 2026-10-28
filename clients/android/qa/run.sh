@@ -27,15 +27,17 @@ keytool -genkeypair -keystore "$loho_qa/temporary.jks" -storepass temporary -key
 for loho_apk in "$loho_qa/app.apk" "$loho_qa/check.apk"; do
     "$loho_tools/apksigner" sign --ks "$loho_qa/temporary.jks" --ks-pass pass:temporary "$loho_apk"
 done
-"$loho_sdk/cmdline-tools/latest/bin/sdkmanager" 'emulator' 'system-images;android-30;google_apis;x86_64'
+loho_test_api="${LOHO_TEST_API:-30}"
+loho_image="system-images;android-${loho_test_api};google_apis;x86_64"
+"$loho_sdk/cmdline-tools/latest/bin/sdkmanager" 'emulator' "$loho_image"
 export ANDROID_AVD_HOME="$loho_qa/avd"
 mkdir -p "$ANDROID_AVD_HOME"
-echo no | "$loho_sdk/cmdline-tools/latest/bin/avdmanager" create avd -n loho-gesture -k 'system-images;android-30;google_apis;x86_64' --device pixel_2 --path "$ANDROID_AVD_HOME/loho-gesture.avd" --force
+echo no | "$loho_sdk/cmdline-tools/latest/bin/avdmanager" create avd -n loho-gesture -k "$loho_image" --device pixel_2 --path "$ANDROID_AVD_HOME/loho-gesture.avd" --force
 test -f "$ANDROID_AVD_HOME/loho-gesture.avd/config.ini"
 cat > "$ANDROID_AVD_HOME/loho-gesture.ini" <<EOF
 avd.ini.encoding=UTF-8
 path=$ANDROID_AVD_HOME/loho-gesture.avd
-target=android-30
+target=android-$loho_test_api
 EOF
 sudo chmod 666 /dev/kvm
 "$loho_sdk/emulator/emulator" -avd loho-gesture -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -camera-back none -camera-front none -memory 2048 -cores 2 -partition-size 1024 > "$loho_qa/emulator.log" 2>&1 &
@@ -58,3 +60,9 @@ adb install -r "$loho_qa/check.apk"
 adb shell am instrument -w app.loho.nodeclient.test/.ZoomCheck | tee "$loho_qa/result.txt"
 grep -q 'LOHO_ZOOM_PASS' "$loho_qa/result.txt"
 grep -q 'LOHO_BACK_PASS' "$loho_qa/result.txt"
+grep -q 'LOHO_INSETS_PASS' "$loho_qa/result.txt"
+# The API 30 image restricts shell access to app-specific external storage.
+# These disposable google_apis emulator images allow root for artifact collection.
+adb root
+adb wait-for-device
+adb pull /sdcard/Android/data/app.loho.nodeclient/files/viewport.png "$loho_qa/viewport.png"

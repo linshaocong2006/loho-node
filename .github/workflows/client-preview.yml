@@ -1,7 +1,7 @@
 name: Client UI preview
 on:
   push:
-    branches: [clients-v1, clients-performance, users-avatars, layout-polish, mobile-layout, zoom-font, back-font]
+    branches: [clients-v1, clients-performance, users-avatars, layout-polish, mobile-layout, zoom-font, back-font, compact-android]
     paths: ['clients/qa/**', '.github/workflows/client-preview.yml', 'loho-node-onekey.sh']
   workflow_dispatch:
 permissions:
@@ -26,7 +26,7 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/loho-playwright" --no-audit --no-fund playwright@1.56.1
           "$RUNNER_TEMP/loho-playwright/node_modules/.bin/playwright" install --with-deps webkit
-          git show 9e93ad998392e00c8910cee5553a0374d6ca5e12:loho-node-onekey.sh > /tmp/loho-baseline.sh
+          git show b7b70b28aa4864ab74e274204d2a0414b75c8dc3:loho-node-onekey.sh > /tmp/loho-baseline.sh
           bash /tmp/loho-baseline.sh --extract-source /tmp/loho-baseline
           export LOHO_PLAYWRIGHT="$RUNNER_TEMP/loho-playwright/node_modules/playwright"
           node clients/qa/mobile-layout.mjs /tmp/loho-baseline/www client-previews/baseline --baseline
