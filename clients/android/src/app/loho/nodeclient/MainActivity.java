@@ -147,7 +147,7 @@ public final class MainActivity extends Activity {
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0.4");
+        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0.5");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(browser, false);
         browser.setWebChromeClient(new WebChromeClient() {
@@ -201,22 +201,12 @@ public final class MainActivity extends Activity {
         if (browser != null && origin != null) {
             if (backPending) return; backPending = true;
             browser.evaluateJavascript("Boolean(window.NodeViewClientHost && window.NodeViewClientHost.back())", value -> {
-                backPending = false; if (!"true".equals(value)) fallbackBack();
+                backPending = false;
+                // The app shell owns navigation. Its root must exit, not replay tab history.
+                if (!"true".equals(value) && !isFinishing()) finish();
             }); return;
         }
-        fallbackBack();
-    }
-    private void fallbackBack() {
-        if (browser != null && origin != null) {
-            android.webkit.WebBackForwardList history = browser.copyBackForwardList();
-            for (int i = history.getCurrentIndex() - 1; i >= 0; i--) {
-                Uri candidate = Uri.parse(history.getItemAtIndex(i).getUrl());
-                if (sameOrigin(candidate) && candidate.getPath() != null && candidate.getPath().startsWith("/node-view/") && !candidate.getPath().endsWith("/login.html")) {
-                    browser.goBackOrForward(i - history.getCurrentIndex()); return;
-                }
-            }
-            showSetup();
-        } else super.onBackPressed();
+        finish();
     }
     private void setAppPaused(boolean paused) {
         if (browser != null) browser.evaluateJavascript("window.NodeViewClientHost && window.NodeViewClientHost.setPaused(" + paused + ")", null);
