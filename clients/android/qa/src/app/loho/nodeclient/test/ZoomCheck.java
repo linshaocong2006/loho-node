@@ -8,7 +8,12 @@ import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.widget.LinearLayout;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.concurrent.CountDownLatch;
@@ -21,6 +26,7 @@ public final class ZoomCheck extends Instrumentation {
     private WebView browser;
     private final int[] location = new int[2];
     private int width, height;
+    private LinearLayout root;
     private static final String PAGE = "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
         + "<style>body{margin:0;font:16px sans-serif}button,input{font:inherit;height:48px}button{width:96px}main{height:2400px;background:#d7e5df}</style>"
         + "<button onclick='window.taps=(window.taps||0)+1'>Tap</button><input placeholder='Input'><main>Gesture target</main>";
@@ -38,7 +44,7 @@ public final class ZoomCheck extends Instrumentation {
                     Field viewField = activity.getClass().getDeclaredField("browser"); viewField.setAccessible(true);
                     browser = (WebView) viewField.get(activity);
                     Field rootField = activity.getClass().getDeclaredField("root"); rootField.setAccessible(true);
-                    LinearLayout root = (LinearLayout) rootField.get(activity);
+                    root = (LinearLayout) rootField.get(activity);
                     root.removeAllViews(); root.addView(browser, new LinearLayout.LayoutParams(-1, -1));
                     require(!browser.getSettings().supportZoom(), "Zoom support still enabled");
                     require(!browser.getSettings().getBuiltInZoomControls(), "Built-in zoom still enabled");
@@ -61,14 +67,25 @@ public final class ZoomCheck extends Instrumentation {
             swipe();
             require(number("scrollY") > 50, "Ordinary scrolling failed");
 
-            // Positive control: prove that the injected two-finger gesture can zoom.
+            // Even a provider that enables zoom must not receive two-finger input.
             runOnMainSync(() -> { browser.getSettings().setSupportZoom(true); browser.getSettings().setBuiltInZoomControls(true); });
+            load(); pinch();
+            require(Math.abs(number("visualViewport.scale") - initial) < .02, "Native multi-touch guard failed with provider zoom enabled");
+
+            checkRealClient();
+
+            // Positive control: prove that the injected two-finger gesture can zoom.
+            runOnMainSync(() -> {
+                browser = new WebView(activity);browser.getSettings().setJavaScriptEnabled(true);
+                browser.getSettings().setSupportZoom(true);browser.getSettings().setBuiltInZoomControls(true);
+                root.removeAllViews();root.addView(browser,new LinearLayout.LayoutParams(-1,-1));
+            });
             load();
             pinch();
             double control = number("visualViewport.scale");
             require(control > initial + .05, "Positive control did not zoom: " + control);
-            result.putString("stream", "LOHO_ZOOM_PASS: pinch/double-tap fixed; tap/scroll work; enabled control scale=" + control + "\n");
-            runOnMainSync(() -> activity.finish());
+            result.putString("stream", "LOHO_ZOOM_PASS: flat page, four real client iframe tabs and user dialog stay at scale 1; provider-enabled guard passes; tap/scroll work; plain-WebView control scale=" + control + "\n");
+            runOnMainSync(() -> {browser.destroy();activity.finish();});
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", "LOHO_ZOOM_FAIL: " + android.util.Log.getStackTraceString(error));
@@ -76,6 +93,47 @@ public final class ZoomCheck extends Instrumentation {
         }
     }
     private static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
+    private void checkRealClient() throws Exception {
+        runOnMainSync(() -> {
+            browser.setWebViewClient(new WebViewClient(){
+                @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
+                    try {
+                        String path=request.getUrl().getPath(),value=null;
+                        if(path.endsWith("/manager/api/users"))value="{\"users\":[{\"key\":\"demo-0\",\"label\":\"ADMIN\",\"enabled\":true,\"masked\":\"test\"}],\"csrf\":\"fixture\",\"revision\":\"qa\",\"busy\":false}";
+                        else if(path.endsWith("/manager/api/profiles"))value="{\"admin\":{\"label\":\"demo-admin\",\"url\":\"\",\"version\":\"\"},\"users\":{},\"csrf\":\"fixture\"}";
+                        if(value!=null)return new WebResourceResponse("application/json","UTF-8",new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8)));
+                        if(!path.startsWith("/node-view/")||path.contains(".."))throw new IllegalArgumentException("Unexpected test path");
+                        String name=path.substring("/node-view/".length());
+                        String mime=name.endsWith(".html")?"text/html":name.endsWith(".js")?"application/javascript":name.endsWith(".css")?"text/css":name.endsWith(".png")?"image/png":name.endsWith(".svg")?"image/svg+xml":"application/json";
+                        return new WebResourceResponse(mime,"UTF-8",getContext().getAssets().open("panel/"+name));
+                    }catch(Exception e){return new WebResourceResponse("text/plain","UTF-8",404,"Not found",null,new ByteArrayInputStream(new byte[0]));}
+                }
+            });
+            browser.loadUrl("https://loho.invalid/node-view/client.html");
+        });
+        waitFor("!!window.NodeViewClientHost && !!document.querySelector('.client-nav')");
+        String[] routes={"overview","connections","users","notifications"};
+        String[] selectors={".user-card",".record",".account","#topic"};
+        for(int i=0;i<routes.length;i++){
+            js("NodeViewClientHost.navigate('/node-view/client.html?tab="+routes[i]+"')");
+            waitFor("!!document.querySelector('iframe:not([hidden])')?.contentDocument?.querySelector('"+selectors[i]+"')");
+            // Remove the CSS fallback so this specifically proves the native guard.
+            js("document.documentElement.style.setProperty('touch-action','auto','important');document.querySelector('iframe:not([hidden])').contentDocument.documentElement.style.setProperty('touch-action','auto','important')");
+            pinch();
+            require(Math.abs(number("visualViewport.scale")-1)<.02,"Root zoomed on "+routes[i]);
+            require(Math.abs(number("document.querySelector('iframe:not([hidden])').contentWindow.visualViewport.scale")-1)<.02,"Iframe zoomed on "+routes[i]);
+            if(i==1)require("true".equals(js("(()=>{const d=document.querySelector('iframe:not([hidden])').contentDocument,w=d.defaultView,s=['search','user','source','window'].map(id=>w.getComputedStyle(d.getElementById(id)));return s.every(x=>x.fontSize==='14px'&&x.fontWeight==='400')&&new Set(s.map(x=>x.fontFamily)).size===1})()")),"Android filter fonts differ");
+            if(i==0){
+                js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.user-card').click()");pinch();
+                require(Math.abs(number("visualViewport.scale")-1)<.02,"User dialog zoomed");
+                js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').close()");
+            }
+        }
+    }
+    private void waitFor(String expression) throws Exception {
+        for(int i=0;i<150;i++){if("true".equals(js(expression))){SystemClock.sleep(300);return;}SystemClock.sleep(100);}
+        throw new AssertionError("Client did not become ready: "+expression);
+    }
     private void load() throws Exception {
         runOnMainSync(() -> browser.loadDataWithBaseURL("https://loho.invalid/node-view/client.html", PAGE, "text/html", "UTF-8", null));
         for (int i = 0; i < 80; i++) {

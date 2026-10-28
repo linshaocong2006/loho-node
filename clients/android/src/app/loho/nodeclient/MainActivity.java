@@ -137,7 +137,7 @@ public final class MainActivity extends Activity {
             && left == right && target.getUserInfo() == null;
     }
     private void createBrowser() {
-        browser = new WebView(this); browser.setBackgroundColor(background);
+        browser = new PanelWebView(this); browser.setBackgroundColor(background);
         WebSettings settings = browser.getSettings(); settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false); settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -147,7 +147,7 @@ public final class MainActivity extends Activity {
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0.3");
+        settings.setUserAgentString(settings.getUserAgentString() + " LoHoNodeAndroid/1.0.4");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(browser, false);
         browser.setWebChromeClient(new WebChromeClient() {

@@ -65,6 +65,16 @@ try{
     await page.locator('.client-account').click();await page.locator('.client-tools-dialog').waitFor({state:'visible'});
     await page.locator('.client-tools-heading button').click();
     const result={engine,width,height,normal,open,bottom,errors};report.push(result);
+    if(!baseline){
+     await page.evaluate(()=>NodeViewClientHost.navigate('/node-view/client.html?tab=connections'));
+     const connections=page.locator('iframe:not([hidden])').contentFrame();await connections.locator('.record').first().waitFor();
+     const typography=await page.evaluate(()=>{const doc=document.querySelector('iframe:not([hidden])').contentDocument,win=doc.defaultView;return ['search','user','source','window','from-date','to-date'].map(id=>{const s=win.getComputedStyle(doc.getElementById(id));return {id,font:s.fontFamily,size:s.fontSize,weight:s.fontWeight};});});
+     if(typography.some(s=>s.size!=='14px'||s.weight!=='400')||new Set(typography.map(s=>s.font)).size!==1)throw Error('Filter typography differs: '+JSON.stringify(typography));
+     await connections.locator('#user').selectOption('key:demo-0');await connections.locator('#source').selectOption('203.0.113.10');await connections.locator('#window').selectOption('1800');
+     await connections.locator('#search').fill('media');
+     if([390,1024].includes(width))await page.screenshot({path:path.join(output,engine+'-'+width+'-filters.png')});
+     result.filters=typography;
+    }
     const issues=[...normal.issues,...open.issues,...bottom.issues,...errors];
     if(issues.length){failures++;console.log(engine+' '+width+': '+JSON.stringify([...new Set(issues)]));}
     else console.log(engine+' '+width+': layout and modal hit tests passed');
