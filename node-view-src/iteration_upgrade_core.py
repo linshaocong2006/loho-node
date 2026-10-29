@@ -21,7 +21,7 @@ import time
 import types
 from notify_upgrade_core import command,replace,deployment
 
-VERSION='10.1.7'
+VERSION='10.1.8'
 APP=Path('/opt/loho-node-view')
 DATA=Path('/var/lib/loho-node-view')
 TRAFFICROOT=Path('/var/lib/loho-node-traffic')
@@ -371,7 +371,7 @@ def upgrade(check=False):
     files=json.loads(gzip.decompress(base64.b64decode(PAYLOAD)));auth,auth_module,domain,port,old=preflight(files)
     changes=prepare(files,auth,domain,port,old)
     if check:print('兼容性检查通过；未安装升级。');return
-    print('本次更新：概览数据分批显示，优化连接列表刷新，修复历史回车查询、改名同步及保存交互；安卓 1.0.6 无需重装。',flush=True)
+    print('本次更新：用户配置弹窗收紧，缩小手机二维码，UUID 和长链接按需展开，复制与关闭始终可见；安卓 1.0.6 无需重装。',flush=True)
     backup=BACKUPS/('iteration-'+time.strftime('%Y%m%d-%H%M%S')+'-'+secrets.token_hex(4));backup.mkdir(parents=True,mode=0o700)
     before={};written=[];paused=False;stopped=[];database_backups=[]
     units=(MANAGER,COLLECTOR,TRAFFIC,AUTH)+((NOTIFY,) if APP/'notify.py' in changes else ())

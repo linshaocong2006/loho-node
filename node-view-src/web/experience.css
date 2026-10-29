@@ -98,3 +98,28 @@
 .history-controls input::-webkit-datetime-edit{font:inherit;line-height:inherit;padding:0}
 @media(max-width:1000px){.filters{grid-template-columns:repeat(3,minmax(0,1fr))}.filters .search{grid-column:1/-1}}
 @media(max-width:700px){.filters{--filter-value-size:16px;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.account-info{grid-template-columns:42px minmax(0,1fr);column-gap:12px}.account>.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;margin-top:16px}.history-controls{--filter-value-size:16px;flex-wrap:wrap}.history-controls label{flex:1 1 100%;width:100%}.history-controls>.button{width:100%;min-height:44px}}
+
+/* The dialog owns the frame; only credential details may scroll. */
+#credential-dialog{box-sizing:border-box;width:400px;max-width:calc(100% - 24px);max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);margin:auto;padding:0;border-color:var(--line);border-radius:16px;overflow:hidden}
+#credential-dialog[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.credential-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px 8px 18px;border-bottom:1px solid var(--line)}
+#credential-title{min-width:0;margin:0;font-family:inherit;font-size:16px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+#credential-dismiss{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);font:24px/1 system-ui;cursor:pointer}
+#credential-dismiss:hover{background:var(--panel2);color:var(--text)}
+.credential-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:12px 18px}
+#credential-note{margin:0;text-align:center;font-family:inherit;font-size:12px;line-height:1.5;color:var(--muted)}
+#credential-dialog #qr{width:192px;height:192px;max-width:100%;object-fit:contain;margin:10px auto;border-radius:6px}
+#credential-dialog .credential-privacy{margin:0 0 8px;color:var(--muted);font-size:11px;line-height:1.6;text-align:center}
+.credential-details{border-top:1px solid var(--line)}
+.credential-details>summary{min-height:44px;display:list-item;box-sizing:border-box;padding:12px 0;font-size:12px;line-height:20px;color:var(--muted);cursor:pointer}
+.credential-details label{margin:10px 0;font-size:11px}
+.credential-details input,.credential-details textarea{font-family:ui-monospace,monospace;line-height:1.45;padding:9px;margin-top:6px}
+.credential-details textarea{height:76px;min-height:76px;max-height:120px;resize:vertical}
+.credential-footer{min-width:0;border-top:1px solid var(--line);padding:12px 18px;background:var(--panel)}
+.credential-footer .actions{display:flex;flex-wrap:nowrap;gap:10px;margin:0}
+.credential-footer .button{min-height:44px;font-size:13px;padding:10px 14px}
+.credential-footer #copy{flex:1;min-width:0}.credential-footer #close-credential{flex:none;min-width:72px}
+.credential-footer #copy-status{margin:8px 0 0;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.credential-footer #copy-status:empty{display:none}
+@media(max-width:700px){#credential-dialog{width:360px}#credential-dialog #qr{width:176px;height:176px}}
+@media(max-height:500px){#credential-dialog #qr{width:144px;height:144px;margin:6px auto}.credential-body{padding-top:8px;padding-bottom:8px}}

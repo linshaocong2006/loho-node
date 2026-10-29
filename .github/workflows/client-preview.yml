@@ -24,9 +24,9 @@ jobs:
           node clients/qa/preview.mjs /tmp/loho-preview/www client-previews
       - name: Verify modal bounds and avatars in Chrome and WebKit
         run: |
-          npm install --prefix "$RUNNER_TEMP/loho-playwright" --no-audit --no-fund playwright@1.56.1
+          npm install --prefix "$RUNNER_TEMP/loho-playwright" --no-audit --no-fund playwright@1.56.1 jsqr@1.4.0
           "$RUNNER_TEMP/loho-playwright/node_modules/.bin/playwright" install --with-deps webkit
-          git show b36375a8ea922234d35feeaa4a3ff1f439faef3a:loho-node-onekey.sh > /tmp/loho-baseline.sh
+          git show 4bff8d35bf363babcf5e233b75b5ebcd5248edbc:loho-node-onekey.sh > /tmp/loho-baseline.sh
           bash /tmp/loho-baseline.sh --extract-source /tmp/loho-baseline
           export LOHO_PLAYWRIGHT="$RUNNER_TEMP/loho-playwright/node_modules/playwright"
           node clients/qa/mobile-layout.mjs /tmp/loho-baseline/www client-previews/baseline --baseline
@@ -36,6 +36,11 @@ jobs:
           export LOHO_PLAYWRIGHT="$RUNNER_TEMP/loho-playwright/node_modules/playwright"
           node clients/qa/audit.mjs /tmp/loho-baseline/www client-previews/audit-baseline --baseline
           node clients/qa/audit.mjs /tmp/loho-preview/www client-previews/audit-fixed
+      - name: Verify compact credential dialogs and QR readability
+        run: |
+          export LOHO_PLAYWRIGHT="$RUNNER_TEMP/loho-playwright/node_modules/playwright"
+          node clients/qa/credentials.mjs /tmp/loho-baseline/www client-previews/credential-baseline --baseline
+          node clients/qa/credentials.mjs /tmp/loho-preview/www client-previews/credential-fixed
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

@@ -1,8 +1,22 @@
 'use strict';
 const $=id=>document.getElementById(id), api='manager/api/';
+// Keep the common scan/copy actions visible; long credentials are optional detail.
+const credentialDialog=$('credential-dialog'),credentialTitle=$('credential-title');
+const credentialHeading=document.createElement('header');credentialHeading.className='credential-heading';
+const credentialDismiss=document.createElement('button');credentialDismiss.id='credential-dismiss';credentialDismiss.type='button';credentialDismiss.textContent='×';credentialDismiss.setAttribute('aria-label','关闭用户配置');credentialDismiss.onclick=()=>credentialDialog.close();
+credentialHeading.append(credentialTitle,credentialDismiss);
+const credentialBody=document.createElement('div');credentialBody.className='credential-body';
+const credentialDetails=document.createElement('details');credentialDetails.className='credential-details';
+const credentialSummary=document.createElement('summary');credentialSummary.textContent='查看 UUID 与导入链接';credentialDetails.append(credentialSummary);
+for(const field of credentialDialog.querySelectorAll('label'))credentialDetails.append(field);
+const credentialHint=credentialDialog.querySelector('p.hint:not(#credential-note)');if(credentialHint)credentialDetails.append(credentialHint);
+const credentialPrivacy=document.createElement('p');credentialPrivacy.className='credential-privacy';credentialPrivacy.textContent='二维码与链接等同账号凭据，仅分享给对应用户。';
+credentialBody.append($('credential-note'),$('qr'),credentialPrivacy,credentialDetails);
+const credentialFooter=document.createElement('footer');credentialFooter.className='credential-footer';credentialFooter.append(credentialDialog.querySelector('.actions'),$('copy-status'));
+credentialDialog.replaceChildren(credentialHeading,credentialBody,credentialFooter);
 let data=null, pending=null, working=false, qrURL=null, activeJob=null,lastRead=0,listSignature='',refreshing=null,readError='';
 function notice(message){$('notice').textContent=message;$('notice').hidden=!message;}
-function busy(value){working=value;document.querySelectorAll('button').forEach(b=>{if(!['close-credential','copy'].includes(b.id))b.disabled=value||(b.id==='add'&&!data);});$('new-label').disabled=value;$('edit-form').setAttribute('aria-busy',String(value));}
+function busy(value){working=value;document.querySelectorAll('button').forEach(b=>{if(!['close-credential','credential-dismiss','copy'].includes(b.id))b.disabled=value||(b.id==='add'&&!data);});$('new-label').disabled=value;$('edit-form').setAttribute('aria-busy',String(value));}
 async function request(route,body){
   const options={cache:'no-store',credentials:'same-origin',headers:{}};
   if(body){options.method='POST';options.headers={'Content-Type':'application/json','X-CSRF-Token':data.csrf};options.body=JSON.stringify(body);}
@@ -43,10 +57,10 @@ function edit(action,user){
 async function credential(user){
   busy(true);notice('正在读取专属配置…');
   try{const value=await request('credential?key='+encodeURIComponent(user.key));if(window.NodeViewClient?.isHidden())return;$('credential-title').textContent=value.label+' · 专属配置';$('credential-note').textContent=value.enabled?'账号使用中':'账号已暂停；恢复后此配置才可连接';$('uuid').value=value.uuid;$('import-link').value=value.link;
-    if(qrURL)URL.revokeObjectURL(qrURL);qrURL=URL.createObjectURL(new Blob([value.svg],{type:'image/svg+xml'}));$('qr').src=qrURL;$('copy-status').textContent='';notice('');$('credential-dialog').showModal();
+    if(qrURL)URL.revokeObjectURL(qrURL);qrURL=URL.createObjectURL(new Blob([value.svg],{type:'image/svg+xml'}));$('qr').src=qrURL;$('copy-status').textContent='';credentialDetails.open=false;credentialBody.scrollTop=0;notice('');credentialDialog.showModal();credentialDismiss.focus({preventScroll:true});
   }catch(error){if(!window.NodeViewClient?.isHidden())notice(error.name==='AbortError'?'配置读取超时，请重试。':error.message);}finally{if($('notice').textContent==='正在读取专属配置…')notice('');busy(false);}
 }
-function clearCredential(){if(qrURL)URL.revokeObjectURL(qrURL);qrURL=null;$('qr').removeAttribute('src');$('uuid').value='';$('import-link').value='';}
+function clearCredential(){if(qrURL)URL.revokeObjectURL(qrURL);qrURL=null;$('qr').removeAttribute('src');$('uuid').value='';$('import-link').value='';credentialDetails.open=false;credentialBody.scrollTop=0;$('copy-status').textContent='';}
 async function pollJob(identifier){
   activeJob=identifier;busy(true);let failures=0;
   for(let attempt=0;attempt<100;attempt++){
@@ -66,7 +80,7 @@ $('edit-form').addEventListener('submit',async event=>{
 });
 $('add').onclick=()=>edit('add');$('refresh').onclick=()=>{if(!working){notice('');refresh().catch(()=>{});}};
 $('cancel-edit').onclick=()=>$('edit-dialog').close();$('close-credential').onclick=()=>$('credential-dialog').close();$('credential-dialog').addEventListener('close',clearCredential);
-$('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('import-link').value);$('copy-status').textContent='已复制导入链接';}catch{$('import-link').focus();$('import-link').select();$('copy-status').textContent='请长按或使用 Ctrl+C 复制已选中的链接。';}};
+$('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('import-link').value);$('copy-status').textContent='已复制导入链接';}catch{credentialDetails.open=true;$('import-link').focus({preventScroll:true});$('import-link').select();$('import-link').scrollIntoView({block:'nearest'});$('copy-status').textContent='请长按或使用 Ctrl+C 复制已选中的链接。';}};
 const start=async()=>{const job=sessionStorage.getItem('node-manager-job');if(job){await pollJob(job);}else{await refresh().catch(()=>{});}};
 $('add').disabled=true;
 $('edit-dialog').addEventListener('cancel',event=>{if(working)event.preventDefault();});

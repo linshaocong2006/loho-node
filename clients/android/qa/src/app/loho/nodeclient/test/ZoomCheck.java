@@ -100,7 +100,7 @@ public final class ZoomCheck extends Instrumentation {
             require(control > initial + .05, "Positive control did not zoom: " + control);
             runOnMainSync(() -> {root.removeAllViews();browser.destroy();browser=appBrowser;root.addView(browser,new LinearLayout.LayoutParams(-1,-1));});
             checkBackNavigation();
-            result.putString("stream", "LOHO_ZOOM_PASS: flat page, four real client iframe tabs and user dialog stay at scale 1; provider-enabled guard passes; tap/scroll work; plain-WebView control scale=" + control + "\nLOHO_BACK_PASS: hardware Back closes top dialog, respects cancel, returns tabs to overview and exits root without replaying browser history\nLOHO_INSETS_PASS: bars/cutout/IME handled once and consumed; Android header/footer 48px with zero CSS safe-area padding\n");
+            result.putString("stream", "LOHO_ZOOM_PASS: flat page, four real client iframe tabs and user dialog stay at scale 1; provider-enabled guard passes; tap/scroll work; plain-WebView control scale=" + control + "\nLOHO_BACK_PASS: hardware Back closes top dialog, respects cancel, returns tabs to overview and exits root without replaying browser history\nLOHO_INSETS_PASS: bars/cutout/IME handled once and consumed; Android header/footer 48px with zero CSS safe-area padding\nLOHO_CREDENTIAL_PASS: compact QR, visible actions, no default body scroll; native Back closes and clears credentials\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", "LOHO_ZOOM_FAIL: " + android.util.Log.getStackTraceString(error));
@@ -124,6 +124,9 @@ public final class ZoomCheck extends Instrumentation {
         waitForIdleSync();
     }
     private void screenshot() throws Exception {
+        screenshot("viewport.png");
+    }
+    private void screenshot(String name) throws Exception {
         CountDownLatch painted=new CountDownLatch(1);
         runOnMainSync(()->browser.postVisualStateCallback(1,new WebView.VisualStateCallback(){
             @Override public void onComplete(long id){browser.invalidate();painted.countDown();}
@@ -131,7 +134,7 @@ public final class ZoomCheck extends Instrumentation {
         require(painted.await(5,TimeUnit.SECONDS),"WebView did not finish painting screenshot");
         waitForIdleSync();SystemClock.sleep(500);
         Bitmap bitmap=getUiAutomation().takeScreenshot();if(bitmap==null)return;
-        try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"viewport.png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}finally{bitmap.recycle();}
+        try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),name))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}finally{bitmap.recycle();}
     }
     private void backKey(){sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);waitForIdleSync();SystemClock.sleep(250);}
     private void checkBackNavigation() throws Exception {
@@ -170,6 +173,7 @@ public final class ZoomCheck extends Instrumentation {
                         String path=request.getUrl().getPath(),value=null;
                         if(path.endsWith("/manager/api/users"))value="{\"users\":[{\"key\":\"demo-0\",\"label\":\"ADMIN\",\"enabled\":true,\"masked\":\"test\"}],\"csrf\":\"fixture\",\"revision\":\"qa\",\"busy\":false}";
                         else if(path.endsWith("/manager/api/profiles"))value="{\"admin\":{\"label\":\"demo-admin\",\"url\":\"\",\"version\":\"\"},\"users\":{},\"csrf\":\"fixture\"}";
+                        else if(path.endsWith("/manager/api/credential"))return new WebResourceResponse("application/json","UTF-8",getContext().getAssets().open("panel/credential-fixture.json"));
                         if(value!=null)return new WebResourceResponse("application/json","UTF-8",new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8)));
                         if(!path.startsWith("/node-view/")||path.contains(".."))throw new IllegalArgumentException("Unexpected test path");
                         String name=path.substring("/node-view/".length());
@@ -200,6 +204,13 @@ public final class ZoomCheck extends Instrumentation {
                 require(Math.abs(number("visualViewport.scale")-1)<.02,"User dialog zoomed");
                 js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').close()");
                 waitFor("!document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.profile-dialog').open");
+            }
+            if(i==2){
+                js("document.querySelector('iframe:not([hidden])').contentDocument.querySelector('.account .actions button').click()");
+                waitFor("(()=>{const d=document.querySelector('iframe:not([hidden])').contentDocument,q=d.getElementById('qr');return d.getElementById('credential-dialog').open&&q.complete&&q.naturalWidth>0})()");
+                require("true".equals(js("(()=>{const d=document.querySelector('iframe:not([hidden])').contentDocument,w=d.defaultView,m=d.getElementById('credential-dialog'),r=m.getBoundingClientRect(),b=m.querySelector('.credential-body'),q=d.getElementById('qr').getBoundingClientRect();return r.top>=0&&r.bottom<=w.innerHeight+.5&&q.width<=192&&!m.querySelector('details').open&&b.scrollHeight<=b.clientHeight+1&&['copy','close-credential','credential-dismiss'].every(id=>{const n=d.getElementById(id),a=n.getBoundingClientRect();return a.top>=r.top&&a.bottom<=r.bottom&&a.height>=44&&n.contains(d.elementFromPoint(a.left+a.width/2,a.top+a.height/2))})})()")),"Credential dialog requires scrolling to reach actions");
+                screenshot("credential.png");backKey();
+                waitFor("(()=>{const d=document.querySelector('iframe:not([hidden])').contentDocument;return !d.getElementById('credential-dialog').open&&d.getElementById('uuid').value===''&&d.getElementById('import-link').value===''})()");
             }
         }
     }

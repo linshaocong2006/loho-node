@@ -26,7 +26,7 @@ import types
 import uuid
 import zipfile
 
-VERSION = '10.1.7'
+VERSION = '10.1.8'
 XRAY_VERSION = '26.10.21'
 ASSETS = {
     'x86_64': ('Xray-linux-64.zip', '0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978'),
