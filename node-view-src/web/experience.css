@@ -100,7 +100,7 @@
 @media(max-width:700px){.filters{--filter-value-size:16px;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.account-info{grid-template-columns:42px minmax(0,1fr);column-gap:12px}.account>.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;margin-top:16px}.history-controls{--filter-value-size:16px;flex-wrap:wrap}.history-controls label{flex:1 1 100%;width:100%}.history-controls>.button{width:100%;min-height:44px}}
 
 /* The dialog owns the frame; only credential details may scroll. */
-#credential-dialog{box-sizing:border-box;width:400px;max-width:calc(100% - 24px);max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);margin:auto;padding:0;border-color:var(--line);border-radius:16px;overflow:hidden}
+#credential-dialog{box-sizing:border-box;position:fixed;top:50%;left:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);width:400px;height:auto;max-width:calc(100% - 24px);max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);margin:0;padding:0;border-color:var(--line);border-radius:16px;overflow:hidden}
 #credential-dialog[open]{display:flex;flex-direction:column}
 .credential-heading,.credential-footer{flex:none}
 .credential-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px 8px 18px;border-bottom:1px solid var(--line)}

@@ -59,10 +59,6 @@ adb shell settings put global animator_duration_scale 0
 adb install -r "$loho_qa/app.apk"
 adb install -r "$loho_qa/check.apk"
 adb shell am instrument -w app.loho.nodeclient.test/.ZoomCheck | tee "$loho_qa/result.txt"
-grep -q 'LOHO_ZOOM_PASS' "$loho_qa/result.txt"
-grep -q 'LOHO_BACK_PASS' "$loho_qa/result.txt"
-grep -q 'LOHO_INSETS_PASS' "$loho_qa/result.txt"
-grep -q 'LOHO_CREDENTIAL_PASS' "$loho_qa/result.txt"
 # The API 30 image restricts shell access to app-specific external storage.
 # These disposable google_apis emulator images allow root for artifact collection.
 loho_rooted=false
@@ -72,5 +68,14 @@ for loho_attempt in 1 2 3; do
 done
 [[ "$loho_rooted" == true ]]
 adb wait-for-device
-adb pull /sdcard/Android/data/app.loho.nodeclient/files/viewport.png "$loho_qa/viewport.png"
-adb pull /sdcard/Android/data/app.loho.nodeclient/files/credential.png "$loho_qa/credential.png"
+for loho_image in viewport.png credential.png; do
+    if adb shell test -f "/sdcard/Android/data/app.loho.nodeclient/files/$loho_image"; then
+        adb pull "/sdcard/Android/data/app.loho.nodeclient/files/$loho_image" "$loho_qa/$loho_image"
+    fi
+done
+grep -q 'LOHO_ZOOM_PASS' "$loho_qa/result.txt"
+grep -q 'LOHO_BACK_PASS' "$loho_qa/result.txt"
+grep -q 'LOHO_INSETS_PASS' "$loho_qa/result.txt"
+grep -q 'LOHO_CREDENTIAL_PASS' "$loho_qa/result.txt"
+test -s "$loho_qa/viewport.png"
+test -s "$loho_qa/credential.png"
