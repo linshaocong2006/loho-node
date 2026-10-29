@@ -10,6 +10,7 @@ bash ../../loho-node-onekey.sh --extract-source "$loho_qa/panel-source"
 mkdir -p "$loho_qa/assets/panel"
 cp -R "$loho_qa/panel-source/www/." "$loho_qa/assets/panel/"
 cp ../qa/fixture.js "$loho_qa/assets/panel/fixture.js"
+cp ../qa/credential-fixture.json "$loho_qa/assets/panel/credential-fixture.json"
 python3 - "$loho_qa/assets/panel" <<'PY'
 from pathlib import Path
 import sys
@@ -58,11 +59,23 @@ adb shell settings put global animator_duration_scale 0
 adb install -r "$loho_qa/app.apk"
 adb install -r "$loho_qa/check.apk"
 adb shell am instrument -w app.loho.nodeclient.test/.ZoomCheck | tee "$loho_qa/result.txt"
+# The API 30 image restricts shell access to app-specific external storage.
+# These disposable google_apis emulator images allow root for artifact collection.
+loho_rooted=false
+for loho_attempt in 1 2 3; do
+    if adb root; then loho_rooted=true; break; fi
+    timeout 30 adb wait-for-device
+done
+[[ "$loho_rooted" == true ]]
+adb wait-for-device
+for loho_image in viewport.png credential.png; do
+    if adb shell test -f "/sdcard/Android/data/app.loho.nodeclient/files/$loho_image"; then
+        adb pull "/sdcard/Android/data/app.loho.nodeclient/files/$loho_image" "$loho_qa/$loho_image"
+    fi
+done
 grep -q 'LOHO_ZOOM_PASS' "$loho_qa/result.txt"
 grep -q 'LOHO_BACK_PASS' "$loho_qa/result.txt"
 grep -q 'LOHO_INSETS_PASS' "$loho_qa/result.txt"
-# The API 30 image restricts shell access to app-specific external storage.
-# These disposable google_apis emulator images allow root for artifact collection.
-adb root
-adb wait-for-device
-adb pull /sdcard/Android/data/app.loho.nodeclient/files/viewport.png "$loho_qa/viewport.png"
+grep -q 'LOHO_CREDENTIAL_PASS' "$loho_qa/result.txt"
+test -s "$loho_qa/viewport.png"
+test -s "$loho_qa/credential.png"

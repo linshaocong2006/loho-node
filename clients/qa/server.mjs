@@ -7,6 +7,7 @@ const here=path.dirname(fileURLToPath(import.meta.url));
 
 export function createFixtureServer(root){
 const fixture=fs.readFileSync(path.join(here,'fixture.js'));
+const credential=JSON.parse(fs.readFileSync(path.join(here,'credential-fixture.json'),'utf8'));
 const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.webmanifest':'application/manifest+json'};
 const qaUsers=['ADMIN','LoHo','Phone','Tablet','Guest','Work'].map((label,i)=>({key:'demo-'+i,label,enabled:i!==4,masked:'••••••••-example'}));
 const photos=new Map();let rosterRevision=0;
@@ -18,6 +19,7 @@ const server=http.createServer(async(req,res)=>{try{
  if(pathname==='/node-view/manager/api/profiles'){json(res,200,{admin:{...profileInfo('admin'),label:'demo-admin'},users:Object.fromEntries(qaUsers.map(u=>[u.key,profileInfo('user',u.key)])),csrf:'fixture'});return;}
  if(pathname==='/node-view/manager/api/avatar'){const raw=photos.get(url.searchParams.get('kind')+':'+url.searchParams.get('key'));if(!raw){res.writeHead(404);res.end();return;}res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store'});res.end(raw);return;}
  if(pathname==='/node-view/manager/api/users'){json(res,200,{users:qaUsers,csrf:'fixture',revision:'qa-'+rosterRevision,busy:false});return;}
+ if(pathname==='/node-view/manager/api/credential'){const user=qaUsers.find(user=>user.key===url.searchParams.get('key'));if(!user){json(res,404,{error:'用户不存在'});return;}json(res,200,{...credential,label:user.label,enabled:user.enabled});return;}
  if(pathname==='/node-view/manager/api/job'){json(res,200,{status:'done',message:'已应用。'});return;}
  if(req.method==='POST'&&['/node-view/manager/api/profile','/node-view/manager/api/change'].includes(pathname)){
   let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);

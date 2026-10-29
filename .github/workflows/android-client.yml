@@ -41,6 +41,7 @@ jobs:
           name: loho-native-layout-${{ matrix.api }}
           path: |
             clients/android/build/gesture-qa/viewport.png
+            clients/android/build/gesture-qa/credential.png
             clients/android/build/gesture-qa/result.txt
           if-no-files-found: warn
           retention-days: 3

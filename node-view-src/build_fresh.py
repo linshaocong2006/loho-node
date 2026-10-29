@@ -20,7 +20,7 @@ import performance_upgrade_core as perf
 import traffic_upgrade_core as usage
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '10.1.7'
+VERSION = '10.1.8'
 PLACEHOLDER = 'd' * 64
 
 
