@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# LoHo full fresh-server installer 10.1.8. Run with bash, not sh.
+# LoHo full fresh-server installer 10.2.0. Run with bash, not sh.
 set -euo pipefail
 umask 077
 case "${1:-}" in
   --help|-h)
-    echo 'LoHo 一键部署 10.1.8：sudo bash loho-node-onekey.sh'
+    echo 'LoHo 一键部署 10.2.0：sudo bash loho-node-onekey.sh'
     echo '支持 Debian 12/13、Ubuntu 22.04/24.04/26.04；x86_64/aarch64；systemd 空白服务器。'
-    echo '默认端口 5000；只创建 ADMIN；域名和密码在安装时输入。'
+    echo '默认 REALITY 主节点 TCP443；HTTPS 面板和 XHTTP TLS 备用节点 TCP5000。'
+    echo '空白 VPS 新装；只创建 ADMIN；域名、REALITY 目标和密码在安装时输入。'
     echo '--check 只检查内置资源；--preflight 检查本机；--extract-source DIR 导出完整源码。'
     exit 0;;
 esac

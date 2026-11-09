@@ -23,6 +23,7 @@ def replace(path,data,metadata=None):
     temporary=path.with_name(path.name+'.test-tmp');temporary.write_bytes(data)
     os.chmod(temporary,metadata.st_mode&0o777 if metadata else 0o600);os.replace(temporary,path)
 helpers.replace=replace;helpers.managed_inbound=lambda config:config['inbounds'][0]
+helpers.managed_inbounds=lambda config:tuple(config['inbounds'])
 sys.modules['manage_users']=helpers
 import avatar_store as avatars
 import manager as manager

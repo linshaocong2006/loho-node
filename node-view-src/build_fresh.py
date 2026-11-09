@@ -1,4 +1,5 @@
 """Compile current runtime components into one fresh-server installer."""
+import argparse
 import ast
 import base64
 import gzip
@@ -6,25 +7,25 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 from unittest.mock import patch
 
-import activity_upgrade_core as activity
-import auth_upgrade_core as auth
-import build_unified
-import installer_core as setup
-import iteration_upgrade_core as iteration
-import notify_upgrade_core as notify
-import pages_upgrade_core as pages
-import performance_upgrade_core as perf
-import traffic_upgrade_core as usage
-
 ROOT = Path(__file__).resolve().parent
-VERSION = '10.1.8'
+VERSION = '10.2.0'
 PLACEHOLDER = 'd' * 64
 
 
 def payload():
+    import auth_upgrade_core as auth
+    import build_unified
+    import installer_core as setup
+    import iteration_upgrade_core as iteration
+    import notify_upgrade_core as notify
+    import pages_upgrade_core as pages
+    import performance_upgrade_core as perf
+    import traffic_upgrade_core as usage
+
     old = build_unified.payload()
     # Start from established components, excluding abandoned HTTP capture assets.
     files = {name: text for name, text in old.items()
@@ -100,12 +101,41 @@ def payload():
     return files
 
 
-def build():
-    files = payload()
-    # Embed proven low-level file/download helpers without an old installer path.
-    original = (ROOT/'unified_core.py').read_text(); tree = ast.parse(original)
+def read_bundle(path):
+    text = path.read_text()
+    encoded = re.search(r"<<'LOHO_BUNDLE_END'\n([A-Za-z0-9+/=\n]+)\nLOHO_BUNDLE_END\n", text)
+    digest = re.search(r"sha256\(raw\)\.hexdigest\(\)!='([0-9a-f]{64})'", text)
+    if not encoded or not digest:
+        raise ValueError('Could not locate the installer bundle and its checksum.')
+    compressed = base64.b64decode(''.join(encoded[1].splitlines()), validate=True)
+    if hashlib.sha256(compressed).hexdigest() != digest[1]:
+        raise ValueError('Base installer bundle checksum does not match.')
+    return json.loads(gzip.decompress(compressed))
+
+
+def build(base, target):
+    if base is None:
+        files = payload()
+        original = (ROOT/'unified_core.py').read_text()
+    else:
+        files = read_bundle(base)
+        original = files.pop('_installer')
+    for name, source in {'manager.py':'fresh_manager.py','manage_users.py':'fresh_credentials.py',
+                         'maintenance.py':'maintenance.py','README.txt':'FRESH_README.txt'}.items():
+        files[name] = (ROOT/source).read_text()
+    release = json.loads(files['_release'])
+    files['_nginx_snippet'] = re.sub(r'(X-LoHo-Login-Version ")[0-9.]+(")',
+                                     lambda match: match[1] + VERSION + match[2], files['_nginx_snippet'])
+    release['version'] = VERSION
+    files['_release'] = json.dumps(release,ensure_ascii=False)
+    # Reuse the vetted low-level helpers from the full source or the published bundle.
+    tree = ast.parse(original)
     names = {'log','run','write','directory','json_text','validate_domain','validate_port','origin','download_xray','LocalTLS'}
-    helpers = '\n\n'.join(ast.get_source_segment(original, n) for n in tree.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in names)
+    helpers_by_name = {n.name:ast.get_source_segment(original,n) for n in tree.body
+                       if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in names}
+    if helpers_by_name.keys() != names:
+        raise ValueError('Base installer is missing low-level helpers.')
+    helpers = '\n\n'.join(helpers_by_name.values())
     core = (ROOT/'fresh_core.py').read_text().replace('# @@LOW_LEVEL_HELPERS@@', helpers)
     files['_installer'] = core
     for name,text in files.items():
@@ -113,8 +143,14 @@ def build():
     compressed = gzip.compress(json.dumps(files,ensure_ascii=False,sort_keys=True).encode(),mtime=0)
     encoded = base64.b64encode(compressed).decode()
     shell = (ROOT/'fresh_wrapper.sh').read_text().replace('@@PAYLOAD@@', '\n'.join(encoded[i:i+100] for i in range(0,len(encoded),100))).replace('@@HASH@@',hashlib.sha256(compressed).hexdigest())
-    target = ROOT.parent/'deliverables/loho-node-onekey.sh'; target.write_text(shell); target.chmod(0o755)
+    target.parent.mkdir(parents=True,exist_ok=True)
+    target.write_text(shell); target.chmod(0o755)
     print(target); print('bytes:',target.stat().st_size); print('sha256:',hashlib.sha256(target.read_bytes()).hexdigest())
 
 
-if __name__ == '__main__': build()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--base',type=Path,help='reuse application resources from a verified one-key installer')
+    parser.add_argument('--output',type=Path,default=ROOT.parent/'deliverables/loho-node-onekey.sh')
+    args = parser.parse_args()
+    build(args.base,args.output)
