@@ -26,7 +26,7 @@ import types
 import uuid
 import zipfile
 
-VERSION = '10.2.0'
+VERSION = '10.2.1'
 XRAY_VERSION = '26.10.21'
 ASSETS = {
     'x86_64': ('Xray-linux-64.zip', '0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978'),
@@ -118,7 +118,10 @@ def choose_internal(start,exclude):
 
 
 def check_reality_target(domain):
-    addresses = socket.getaddrinfo(domain, 443, type=socket.SOCK_STREAM)
+    try:
+        addresses = socket.getaddrinfo(domain, 443, type=socket.SOCK_STREAM)
+    except socket.gaierror as error:
+        raise ValueError('REALITY 目标域名解析失败，请检查拼写或换一个域名。') from error
     if not addresses or any(not ipaddress.ip_address(item[4][0]).is_global for item in addresses):
         raise ValueError('REALITY 目标域名需解析到公网地址。')
     context = ssl.create_default_context()
@@ -143,40 +146,134 @@ def reality_keypair():
     return private[1], public[1]
 
 
+def ask_value(prompt, validate, default=None):
+    while True:
+        value = input(prompt).strip()
+        try:
+            return validate(default if value == '' and default is not None else value)
+        except ValueError as error:
+            log(str(error)+' 请重新输入这一项。')
+
+
+def choice_value(value, options):
+    if value not in options:
+        raise ValueError('可选值为 '+ ' / '.join(options)+'。')
+    return value
+
+
+def node_domain(value):
+    domain = validate_domain(value)
+    try:
+        records = sorted({item[4][0] for item in socket.getaddrinfo(domain, 80, type=socket.SOCK_STREAM)})
+    except socket.gaierror as error:
+        raise ValueError('节点域名解析失败，请检查拼写和 DNS 的 A 记录。') from error
+    if not records:
+        raise ValueError('节点域名没有解析记录。')
+    for address in records:
+        if not ipaddress.ip_address(address).is_global:
+            raise ValueError('域名包含非公网解析，无法申请公网证书。')
+        if ':' in address:
+            raise ValueError('此安装器使用 IPv4 入口，请移除该域名的 AAAA 记录。')
+    return domain, records
+
+
+def available_port(value, panel_port=None):
+    port = validate_port(value)
+    if panel_port is not None and ((port != 443 and port < 1024) or port == panel_port):
+        raise ValueError('REALITY 端口需为 443 或 1024–65535，且须与 HTTPS 面板端口不同。')
+    free_port(port)
+    return port
+
+
+def check_acme_port():
+    try:
+        free_port(80)
+    except ValueError:
+        # An earlier setup may already have installed and started the distro Nginx.
+        default = Path('/etc/nginx/sites-enabled/default')
+        if not default.is_symlink() or default.resolve() != Path('/etc/nginx/sites-available/default') or not shutil.which('ss'):
+            raise
+        main_pid = run(['systemctl','show','--property=MainPID','--value','nginx']).strip()
+        listeners = run(['ss','-H','-lntp','sport = :80']).splitlines()
+        owners = [re.findall(r'\("([^"\n]+)",pid=(\d+),', line) for line in listeners]
+        if (not owners or not all(row and all(name == 'nginx' for name,_ in row) for row in owners)
+                or not any(pid == main_pid for row in owners for _,pid in row)):
+            raise
+        log('TCP80 已由发行版的 Nginx 默认站点监听，继续使用现有 Nginx。')
+
+
+def certificate_email(value):
+    if value and (len(value)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value) or value.startswith('-')):
+        raise ValueError('邮箱格式不正确。')
+    return value
+
+
+def website_username(value):
+    if not re.fullmatch(r'[A-Za-z0-9_.-]{1,32}', value):
+        raise ValueError('用户名需为 1–32 位字母、数字、点、下划线或短横线。')
+    return value
+
+
+def website_password():
+    while True:
+        password = getpass.getpass('网站密码（12–128位，输入不显示）：')
+        if not 12<=len(password)<=128 or any(c in password for c in (':','\n','\r','\x00')):
+            log('密码需为 12–128 位，且不能包含冒号或换行。请重新输入密码。')
+        elif password == getpass.getpass('再次输入密码：'):
+            return password
+        else:
+            log('两次密码不同，请重新输入并确认密码。')
+
+
+def reality_domain(value, domain):
+    target = validate_domain(value)
+    if target == domain:
+        raise ValueError('REALITY 目标应填写另一个 HTTPS 站点的域名。')
+    return target
+
+
+def prompt_reality_domain(domain):
+    return ask_value('REALITY 目标域名（只填域名，可试 www.apple.com）：',
+                     lambda value: reality_domain(value, domain))
+
+
+def verify_reality_settings(settings):
+    reality = settings.get('reality')
+    if not reality:
+        return
+    target = reality['sni']
+    while True:
+        try:
+            check_reality_target(target)
+        except ValueError as error:
+            log(str(error)+' 之前输入的其他设置已保留。')
+            target = prompt_reality_domain(settings['domain'])
+        else:
+            reality.update(sni=target,target=target+':443')
+            log('REALITY 目标检查通过：'+target+'。')
+            return
+
+
 def settings_prompt():
     if not sys.stdin.isatty(): raise ValueError('请下载或上传脚本后用 bash 运行，安装需要交互输入。')
-    domain = validate_domain(input('节点域名（A记录指向本机，普通DNS解析）：'))
-    port = validate_port(input('HTTPS 面板 / 兼容节点端口 [5000]：').strip() or '5000')
-    email = input('证书联系邮箱（可留空，回车跳过）：').strip()
-    if email and (len(email)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email) or email.startswith('-')):
-        raise ValueError('邮箱格式不正确。')
-    username = input('网站登录用户名 [loho]：').strip() or 'loho'
-    if not re.fullmatch(r'[A-Za-z0-9_.-]{1,32}',username): raise ValueError('用户名需为1–32位字母、数字、点、下划线或短横线。')
-    password = getpass.getpass('网站密码（12–128位，输入不显示）：')
-    if not 12<=len(password)<=128 or any(c in password for c in (':','\n','\r','\x00')): raise ValueError('密码需为12–128位，不能包含冒号或换行。')
-    if password != getpass.getpass('再次输入密码：'): raise ValueError('两次密码不同。')
-    choice = input('部署方式：1=REALITY + XHTTP TLS 备用，2=仅 XHTTP TLS，3=WebSocket TLS [1]：').strip() or '1'
-    if choice not in ('1','2','3'): raise ValueError('请选择 1、2 或 3。')
+    check_acme_port()
+    domain,records = ask_value('节点域名（A记录指向本机，普通DNS解析）：',node_domain)
+    port = ask_value('HTTPS 面板 / 兼容节点端口 [5000]：',available_port,'5000')
+    email = ask_value('证书联系邮箱（可留空，回车跳过）：',certificate_email)
+    username = ask_value('网站登录用户名 [loho]：',website_username,'loho')
+    password = website_password()
+    choice = ask_value('部署方式：1=REALITY + XHTTP TLS 备用，2=仅 XHTTP TLS，3=WebSocket TLS [1]：',
+                       lambda value: choice_value(value,('1','2','3')),'1')
     reality = None
     if choice == '1':
-        reality_port = validate_port(input('REALITY 节点端口 [443]：').strip() or '443')
-        if (reality_port != 443 and reality_port < 1024) or reality_port == port:
-            raise ValueError('REALITY 端口需为 443 或 1024–65535，且须与 HTTPS 面板端口不同。')
-        target = validate_domain(input('REALITY 目标域名（公网 TCP443，支持 TLS 1.3 和 HTTP/2）：'))
-        if target == domain:
-            raise ValueError('REALITY 目标应填写其他站点的域名。')
-        free_port(reality_port)
+        reality_port = ask_value('REALITY 节点端口 [443]：',lambda value: available_port(value,port),'443')
+        log('REALITY 目标是供握手使用的 HTTPS 站点。只填域名，不加 https://、端口或路径。')
+        target = prompt_reality_domain(domain)
         reality = {'port':reality_port,'target':target+':443','sni':target,'fingerprint':'chrome',
                    'short_id':secrets.token_hex(8),'path':'/'+secrets.token_hex(12)+'/',
                    'inbound_tag':'loho-node-reality'}
-    bbr = input('启用系统自带BBR（可选）？[y/N]：').strip().lower()
-    if bbr not in ('','n','no','y','yes'): raise ValueError('BBR选项请输入y或n。')
-    records = sorted({x[4][0] for x in socket.getaddrinfo(domain,80,socket.AF_UNSPEC,socket.SOCK_STREAM)})
-    if not records: raise ValueError('域名没有解析记录。')
-    for address in records:
-        if not ipaddress.ip_address(address).is_global: raise ValueError('域名包含非公网解析，无法申请公网证书。')
-        if ':' in address: raise ValueError('首版配置IPv4入口，请先移除该域名AAAA记录，避免验证和客户端访问走错入口。')
-    free_port(80); free_port(port)
+    bbr = ask_value('启用系统自带BBR（可选）？[y/N]：',
+                    lambda value: choice_value(value.lower(),('y','n','yes','no')),'n')
     reserved = {80,port}
     if reality:
         reserved.add(reality['port'])
@@ -501,8 +598,7 @@ def install(files):
         run(['apt-get','-o','DPkg::Lock::Timeout=120','update'])
         run(['env','DEBIAN_FRONTEND=noninteractive','apt-get','-o','DPkg::Lock::Timeout=120','install','-y','--no-install-recommends',
              'nginx','certbot','openssl','curl','ca-certificates','python3','libcrypt1','logrotate','iproute2','kmod','procps'])
-        if settings.get('reality'):
-            check_reality_target(settings['reality']['sni'])
+        verify_reality_settings(settings)
         version=run(['nginx','-V']); match=re.search(r'nginx/(\d+)\.(\d+)\.(\d+)',version)
         if '--with-http_auth_request_module' not in version or '--with-http_v2_module' not in version: raise ValueError('系统Nginx缺少auth_request或HTTP/2模块。')
         modern=bool(match and tuple(map(int,match.groups()))>=(1,25,1))
