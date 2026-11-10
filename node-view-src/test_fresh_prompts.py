@@ -25,7 +25,7 @@ class PromptTests(unittest.TestCase):
         inputs = iter([
             'bad.example.net','node.example.net',  # DNS failure
             'bad','5001','',                       # Invalid, occupied, default panel port
-            'bad-email','', 'bad name','',        # Email and username
+            'bad name','',                        # Invalid, then default username
             '5000','',                            # REALITY port conflicts with panel
             'https://www.apple.com','node.example.net','',
             'maybe','',
@@ -40,17 +40,18 @@ class PromptTests(unittest.TestCase):
         with patch.object(installer.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=answer), \
              patch.object(installer.socket,'getaddrinfo',side_effect=resolve), patch.object(installer,'free_port',side_effect=free), \
              patch.object(installer.getpass,'getpass',side_effect=passwords), patch.object(installer,'log'):
-            settings,email,username,password,bbr = installer.settings_prompt()
+            settings,username,password,bbr = installer.settings_prompt()
 
         self.assertEqual(prompts[0],prompts[1])
         self.assertEqual(prompts[2],prompts[3])
         self.assertEqual(prompts[3],prompts[4])
-        self.assertEqual(prompts[9],prompts[10])
-        self.assertEqual(prompts[11:14],[prompts[11]]*3)
+        self.assertEqual(prompts[5:7],['网站登录用户名 [loho]：']*2)
+        self.assertEqual(prompts[7],prompts[8])
+        self.assertEqual(prompts[9:12],[prompts[9]]*3)
         self.assertEqual((settings['domain'],settings['port'],settings['reality']['port']),
                          ('node.example.net',5000,3000))
         self.assertEqual(settings['reality']['target'],'www.apple.com:443')
-        self.assertEqual((email,username,password,bbr),('','loho','long-password-2',False))
+        self.assertEqual((username,password,bbr),('loho','long-password-2',False))
 
         inbound, = installer.xray_config(settings,[],'test-key')['inbounds']
         self.assertEqual(inbound['port'],3000)
@@ -63,7 +64,7 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn('listen 3000',nginx)
 
     def test_default_reality_port_avoids_panel_on_3000(self):
-        answers = ['node.example.net','3000','','','','','']
+        answers = ['node.example.net','3000','','','','']
         with patch.object(installer.sys.stdin,'isatty',return_value=True), \
              patch('builtins.input',side_effect=answers), \
              patch.object(installer,'node_domain',return_value=('node.example.net',['1.1.1.1'])), \

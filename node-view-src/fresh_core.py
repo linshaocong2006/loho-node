@@ -25,7 +25,7 @@ import types
 import uuid
 import zipfile
 
-VERSION = '10.3.1'
+VERSION = '10.3.2'
 XRAY_VERSION = '26.10.21'
 ASSETS = {
     'x86_64': ('Xray-linux-64.zip', '0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978'),
@@ -204,12 +204,6 @@ def check_acme_port():
         log('TCP80 已由发行版的 Nginx 默认站点监听，继续使用现有 Nginx。')
 
 
-def certificate_email(value):
-    if value and (len(value)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value) or value.startswith('-')):
-        raise ValueError('邮箱格式不正确。')
-    return value
-
-
 def website_username(value):
     if not re.fullmatch(r'[A-Za-z0-9_.-]{1,32}', value):
         raise ValueError('用户名需为 1–32 位字母、数字、点、下划线或短横线。')
@@ -259,7 +253,6 @@ def settings_prompt():
     check_acme_port()
     domain,records = ask_value('节点和后台域名（A 记录指向本机，普通 DNS 解析）：',node_domain)
     port = ask_value('HTTPS 面板端口 [5000]：',available_port,'5000')
-    email = ask_value('证书联系邮箱（可留空，回车跳过）：',certificate_email)
     username = ask_value('网站登录用户名 [loho]：',website_username,'loho')
     password = website_password()
     default_port = '3001' if port == 3000 else '3000'
@@ -279,7 +272,7 @@ def settings_prompt():
     log('节点：VLESS + XHTTP packet-up + REALITY，TCP%d，初始用户 ADMIN。'%reality_port)
     public_ports = 'TCP80、TCP%d、TCP%d'%(port,reality_port)
     log('需要公网 '+public_ports+'；继续即同意证书服务条款 https://letsencrypt.org/repository/ 。')
-    return settings,email,username,password,bbr in ('y','yes')
+    return settings,username,password,bbr in ('y','yes')
 
 
 def xray_config(settings,clients,reality_private_key):
@@ -546,7 +539,7 @@ def apply_bbr(transaction):
 def install(files):
     global LOG
     preflight()
-    settings,email,username,password,bbr=settings_prompt()
+    settings,username,password,bbr=settings_prompt()
     LOG=Path('/root/loho-install-'+time.strftime('%Y%m%d-%H%M%S')+'-'+secrets.token_hex(3)+'.log'); write(LOG,'',0o600)
     transaction=Installation()
     try:
@@ -620,10 +613,8 @@ def install(files):
             finally: c.close()
         until_ready(challenge_ready,'等待证书验证路径'); challenge.unlink()
         certargs=['certbot','certonly','--webroot','-w','/var/www/loho-acme','-d',settings['domain'],'--cert-name','loho-'+settings['domain'],'--agree-tos','--non-interactive','--keep-until-expiring']
-        if email: certargs += ['--email',email]
-        else:
-            helptext=run(['certbot','--help','all'])
-            if '--register-unsafely-without-email' in helptext: certargs.append('--register-unsafely-without-email')
+        helptext=run(['certbot','--help','all'])
+        if '--register-unsafely-without-email' in helptext: certargs.append('--register-unsafely-without-email')
         run(certargs)
         log('[5/8] 启用节点、网站登录、采集和通知服务。')
         write('/etc/letsencrypt/renewal-hooks/deploy/loho-nginx','#!/bin/sh\nset -eu\n/usr/sbin/nginx -t\n/usr/bin/systemctl reload nginx\n',0o750)
