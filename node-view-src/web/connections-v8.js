@@ -83,16 +83,17 @@ function renderLive(){
 }
 function setOptions(select,values,all,textFunction){
   const current=select.value;
-  const unique=[...new Set(values)];if(current&&!unique.includes(current))unique.push(current);
-  const signature=JSON.stringify([unique,all,select===ui.user?accountLabels:null]);if(optionSignatures.get(select)===signature)return;
+  const unique=[...new Set(values)];
+  const selected=unique.includes(current)?current:'';
+  const signature=JSON.stringify([unique,all,select===ui.user?accountLabels:null]);
+  if(optionSignatures.get(select)===signature){select.value=selected;return;}
   optionSignatures.set(select,signature);const fragment=document.createDocumentFragment();
   const option=element('option','',all);option.value='';fragment.append(option);
   for(const value of unique){const option=element('option','',textFunction?textFunction(value):value);option.value=value;fragment.append(option);}
-  select.replaceChildren(fragment);select.value=current;
+  select.replaceChildren(fragment);select.value=selected;
 }
 function refreshOptions(snapshot){
   accountLabels={...accountLabels,...snapshot.account_labels,...rosterLabels};
-  if(mode==='live'&&ui.user.value&&!activeUsers?.has(ui.user.value))ui.user.value='';
   setOptions(ui.user,mode==='live'?[...(activeUsers||[])]:[...(snapshot.users||[])],'全部用户',label);
   if(mode==='live'&&activeUsers&&requestedUser!==null){
     if(activeUsers.has(requestedUser))ui.user.value=requestedUser;
@@ -101,7 +102,6 @@ function refreshOptions(snapshot){
     requestedUser=null;
   }
   const sources=mode==='live'?[...new Set((snapshot.rows||[]).filter(row=>activeUsers?.has(rowKey(row))).map(row=>row.source))]:[...(snapshot.sources||[])];
-  if(mode==='live'&&ui.source.value&&!sources.includes(ui.source.value))ui.source.value='';
   setOptions(ui.source,sources.sort(),'全部来源');
 }
 async function fetchJSON(path,signal){
@@ -132,7 +132,31 @@ async function poll(){
   finally{clearTimeout(timer);busy=false;}
 }
 function localInput(ms){const date=new Date(ms);return new Date(ms-date.getTimezoneOffset()*60000).toISOString().slice(0,16);}
-function initDates(){const now=Date.now();if(!ui['from-date'].value||new Date(ui['from-date'].value).getTime()<now-RETENTION*1000-65000)ui['from-date'].value=localInput(now-RETENTION*1000);if(!ui['to-date'].value)ui['to-date'].value=localInput(Math.ceil(now/60000)*60000);}
+function legacyRollingRange(controls){
+  if(!controls?.['from-date']||!controls?.['to-date'])return true;
+  const duration=(new Date(controls['to-date'])-new Date(controls['from-date']))/1000;
+  return duration>=RETENTION&&duration<=RETENTION+60;
+}
+let historyRolling=stored?.historyRolling??legacyRollingRange(stored?.controls);
+for(const field of ['from-date','to-date'])ui[field].addEventListener('change',()=>{historyRolling=false;});
+ui['mode-history'].title='在历史页再次点击可恢复最近 7 天';
+function historyRange(now){
+  const cutoff=now-RETENTION;
+  if(historyRolling){
+    ui['from-date'].value=localInput(cutoff*1000);
+    ui['to-date'].value=localInput(Math.ceil(now/60)*60000);
+    return {start:cutoff,end:now,notice:''};
+  }
+  const start=new Date(ui['from-date'].value).getTime()/1000;
+  const end=new Date(ui['to-date'].value).getTime()/1000;
+  if(!Number.isFinite(start)||!Number.isFinite(end)||start>=end)return {error:'请选择有效的开始、结束时间，结束时间应晚于开始时间。'};
+  if(end<cutoff)return {error:'所选时段已超过保留期。点击“7 天历史”可恢复最近 7 天。'};
+  if(start<cutoff){
+    ui['from-date'].value=localInput(cutoff*1000);
+    return {start:cutoff,end,notice:'已从最近 7 天的保留起点开始查询。'};
+  }
+  return {start,end,notice:''};
+}
 function cancelHistory(){queryEpoch++;if(controller)controller.abort();controller=null;historyBusy=false;ui['history-query'].disabled=false;}
 function clearHistory(){
   cancelHistory();historyState=null;paint([],0,true);notify('筛选已修改，请点击“查询历史”。');
@@ -161,17 +185,16 @@ async function historyPage(index,cursor,epoch,signal){
     ui['history-prev'].disabled=index===0;ui['history-next'].disabled=!result.next;
     ui.updated.textContent='历史索引更新 '+stamp(snapshot.manifest.generated);
     ui.coverage.textContent='本页 '+result.rows.length+' 组 · 统计仅针对本页 · 历史保留 7 天';
-    state('历史查询');notify(warnings(snapshot.manifest));saveView();restoreViewScroll();
+    state('历史查询');notify([snapshot.rangeNotice,warnings(snapshot.manifest)].filter(Boolean).join('\n'));saveView();restoreViewScroll();
   }catch(error){if(epoch===queryEpoch&&error.name!=='AbortError'){state('查询失败','error');notify(error.message);ui['history-prev'].disabled=true;ui['history-next'].disabled=true;}}
   finally{if(epoch===queryEpoch){historyBusy=false;ui['history-query'].disabled=false;}}
 }
 async function queryHistory(){
   if(mode!=='history')return;
   clearTimeout(searchTimer);
+  const range=historyRange(Date.now()/1000);
+  if(range.error){clearHistory();state('历史查询');notify(range.error);return;}
   cancelHistory();const epoch=queryEpoch;controller=new AbortController();const signal=controller.signal;
-  const now=Date.now()/1000,start=new Date(ui['from-date'].value).getTime()/1000,end=new Date(ui['to-date'].value).getTime()/1000;
-  if(!Number.isFinite(start)||!Number.isFinite(end)||start>=end){notify('请选择有效的开始、结束时间，结束时间应晚于开始时间。');return;}
-  if(start<now-RETENTION-65){notify('历史最多保留最近 7 天，请调整开始时间。');return;}
   historyBusy=true;ui['history-query'].disabled=true;state('读取历史');notify('');paint([],0,true);
   ui['empty-title'].textContent='正在查询历史';ui['empty-text'].textContent='正在读取并筛选记录，请稍候。';
   try{
@@ -179,8 +202,8 @@ async function queryHistory(){
     if(epoch!==queryEpoch)return;
     if(manifest.schema!==2||!Array.isArray(manifest.hours))throw new Error('历史索引格式不正确。');
     refreshOptions(manifest);
-    const filter=filters(Math.max(start,now-RETENTION),end);
-    historyState={manifest,filter,pages:Q.pagesFor(manifest,filter),positions:[],index:0,rows:[],next:null};
+    const filter=filters(range.start,range.end);
+    historyState={manifest,filter,rangeNotice:range.notice,pages:Q.pagesFor(manifest,filter),positions:[],index:0,rows:[],next:null};
     const signature=pageSignature(historyState),position=restorePosition;restorePosition=null;
     if(position&&position.signature===signature&&Number.isInteger(position.index)&&position.index>=0&&position.index<100&&Array.isArray(position.positions)&&position.positions.every(p=>p&&Number.isInteger(p.file)&&p.file>=0&&p.file<=historyState.pages.length&&Number.isInteger(p.row)&&p.row>=0&&p.row<=500)&&position.positions[position.index]){historyState.positions=position.positions;await historyPage(position.index,position.positions[position.index],epoch,signal);}
     else await historyPage(0,{file:0,row:0},epoch,signal);
@@ -189,11 +212,12 @@ async function queryHistory(){
 }
 function switchMode(next){
   clearTimeout(searchTimer);
+  if(mode==='history'&&next==='history'){historyRolling=true;restorePosition=null;}
   mode=next;cancelHistory();
   ui['mode-live'].setAttribute('aria-pressed',String(mode==='live'));ui['mode-history'].setAttribute('aria-pressed',String(mode==='history'));
   ui.pause.hidden=mode==='history';ui['live-window'].hidden=mode==='history';ui['history-controls'].hidden=mode==='live';ui['history-navigation'].hidden=mode==='live';
   ui['list-title'].textContent=mode==='live'?'实时连接':'历史连接';ui['refresh-note'].textContent=mode==='live'?'实时每 3 秒刷新 · 时间按本机显示':'历史按需查询 · 时间按本机显示';
-  if(mode==='history'){initDates();queryHistory();}else{if(data)refreshOptions(data);renderLive();if(paused)state('已暂停','paused');else poll();}
+  if(mode==='history'){queryHistory();}else{if(data)refreshOptions(data);renderLive();if(paused)state('已暂停','paused');else poll();}
 }
 ui['mode-live'].addEventListener('click',()=>switchMode('live'));ui['mode-history'].addEventListener('click',()=>switchMode('history'));
 ui.pause.addEventListener('click',()=>{paused=!paused;ui.pause.textContent=paused?'继续刷新':'暂停刷新';if(paused)state('已暂停','paused');else{state('正在连接');poll();}renderLive();});
@@ -233,7 +257,7 @@ function saveView(){
  const controls={};for(const name of ['search','source','user','window','from-date','to-date'])controls[name]=ui[name].value;
  for(const name of ['hide-dns','domain-only'])controls[name]=ui[name].checked;
  const position=mode==='history'&&historyState?{signature:pageSignature(historyState),index:historyState.index,positions:historyState.positions.slice(0,100)}:null;
- window.NodeViewPanel.save('connections',{controls,mode,shown,scroll:window.scrollY,position});
+ window.NodeViewPanel.save('connections',{controls,mode,historyRolling,shown,scroll:window.scrollY,position});
 }
 function restoreViewScroll(){if(restoreScroll){const position=restoreScroll;restoreScroll=0;requestAnimationFrame(()=>window.scrollTo(0,position));}}
 if(stored?.controls){for(const name of ['search','source','from-date','to-date'])if(typeof stored.controls[name]==='string'&&stored.controls[name].length<200)ui[name].value=stored.controls[name];
