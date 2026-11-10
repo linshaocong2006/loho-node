@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# LoHo full fresh-server installer 10.3.2. Run with bash, not sh.
+# LoHo full fresh-server installer 10.3.3. Run with bash, not sh.
 set -euo pipefail
 umask 077
 case "${1:-}" in
   --help|-h)
-    echo 'LoHo 一键部署 10.3.2：sudo bash loho-node-onekey.sh'
+    echo 'LoHo 一键部署 10.3.3：sudo bash loho-node-onekey.sh'
     echo '支持 Debian 12/13、Ubuntu 22.04/24.04/26.04；x86_64/aarch64；systemd 空白服务器。'
     echo '默认 REALITY 节点 TCP3000，HTTPS 面板 TCP5000，证书验证 TCP80。'
     echo '空白 VPS 新装；只创建 ADMIN；域名、REALITY 目标和密码在安装时输入。'
@@ -18,6 +18,15 @@ if ! command -v python3 >/dev/null 2>&1; then
     case "${ID:-}:${VERSION_ID:-}" in
       debian:12|debian:13|ubuntu:22.04|ubuntu:24.04|ubuntu:26.04) ;;
       *) echo '支持 Debian 12/13、Ubuntu 22.04/24.04/26.04；未修改系统。' >&2; exit 1;;
+    esac
+    printf '安装器需要 Python 3。是否先安装 Python 3 再填写节点配置？[y/N] '
+    if ! read -r loho_bootstrap_answer </dev/tty; then
+        echo '请在交互终端中运行安装器。' >&2
+        exit 1
+    fi
+    case "$loho_bootstrap_answer" in
+      y|Y|yes|YES) ;;
+      *) echo '已退出安装。'; exit 0 ;;
     esac
     apt-get -o DPkg::Lock::Timeout=120 update
     DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends python3

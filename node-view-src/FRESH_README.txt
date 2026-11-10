@@ -1,4 +1,4 @@
-LoHo 完整一键部署 10.3.2
+LoHo 完整一键部署 10.3.3
 
 运行：将 loho-node-onekey.sh 上传到空白 VPS 的 /root/ 后执行：
   sudo bash /root/loho-node-onekey.sh
@@ -25,6 +25,8 @@ REALITY 目标域名是供握手使用的 HTTPS 站点，默认为 www.apple.com
 面板选用 3000 时，REALITY 默认使用 3001。
 输入校验失败时会提示并重新询问当前项。两次密码不一致时重新输入并确认密码。REALITY 目标的连通性检查失败时可更换目标，已填写的其他设置会保留。
 可选开启系统自带BBR；默认不修改。仅检测到内核支持时应用独立sysctl文件。
+填写后核对安装摘要，输入 1 开始安装、2 返回修改、3 退出。返回修改时回车保留当前值，密码不会显示。
+缺少 Python 3 的系统会先询问是否安装 Python 3，以便启动配置问答。
 安装结束后：
   面板 https://你的域名:5000/node-view/
   sudo cat /root/loho-node-install.txt

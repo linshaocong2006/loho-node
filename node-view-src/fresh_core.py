@@ -25,7 +25,7 @@ import types
 import uuid
 import zipfile
 
-VERSION = '10.3.2'
+VERSION = '10.3.3'
 XRAY_VERSION = '26.10.21'
 ASSETS = {
     'x86_64': ('Xray-linux-64.zip', '0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978'),
@@ -210,9 +210,13 @@ def website_username(value):
     return value
 
 
-def website_password():
+def website_password(previous=None):
+    prompt = ('网站密码（回车保留当前密码，输入不显示）：' if previous is not None
+              else '网站密码（12–128位，输入不显示）：')
     while True:
-        password = getpass.getpass('网站密码（12–128位，输入不显示）：')
+        password = getpass.getpass(prompt)
+        if not password and previous is not None:
+            return previous
         if not 12<=len(password)<=128 or any(c in password for c in (':','\n','\r','\x00')):
             log('密码需为 12–128 位，且不能包含冒号或换行。请重新输入密码。')
         elif password == getpass.getpass('再次输入密码：'):
@@ -228,9 +232,9 @@ def reality_domain(value, domain):
     return target
 
 
-def prompt_reality_domain(domain):
-    return ask_value('REALITY 目标域名 [www.apple.com]：',
-                     lambda value: reality_domain(value, domain), 'www.apple.com')
+def prompt_reality_domain(domain, default='www.apple.com'):
+    return ask_value(f'REALITY 目标域名 [{default}]：',
+                     lambda value: reality_domain(value, domain), default)
 
 
 def verify_reality_settings(settings):
@@ -248,31 +252,45 @@ def verify_reality_settings(settings):
             return
 
 
-def settings_prompt():
+def settings_prompt(previous=None):
     if not sys.stdin.isatty(): raise ValueError('请下载或上传脚本后用 bash 运行，安装需要交互输入。')
     check_acme_port()
-    domain,records = ask_value('节点和后台域名（A 记录指向本机，普通 DNS 解析）：',node_domain)
-    port = ask_value('HTTPS 面板端口 [5000]：',available_port,'5000')
-    username = ask_value('网站登录用户名 [loho]：',website_username,'loho')
-    password = website_password()
-    default_port = '3001' if port == 3000 else '3000'
+    old, old_username, old_password, old_bbr = previous or ({},'loho',None,False)
+    domain_default = old.get('domain')
+    domain_hint = f' [{domain_default}]' if domain_default else ''
+    domain,records = ask_value(f'节点和后台域名（A 记录指向本机，普通 DNS 解析）{domain_hint}：',
+                               node_domain,domain_default)
+    panel_default = str(old.get('port',5000))
+    port = ask_value(f'HTTPS 面板端口 [{panel_default}]：',available_port,panel_default)
+    username = ask_value(f'网站登录用户名 [{old_username}]：',website_username,old_username)
+    password = website_password(old_password)
+    old_reality = old.get('reality',{})
+    default_port = old_reality.get('port',3000)
+    if port == default_port:
+        default_port = 3001 if port == 3000 else 3000
     reality_port = ask_value(f'REALITY 节点端口 [{default_port}]：',
-                             lambda value: available_port(value,port),default_port)
+                             lambda value: available_port(value,port),str(default_port))
     log('REALITY 目标是供握手使用的 HTTPS 站点。只填域名，不加 https://、端口或路径。')
-    target = prompt_reality_domain(domain)
+    target_default = old_reality.get('sni','www.apple.com')
+    target = prompt_reality_domain(domain,'www.apple.com' if target_default == domain else target_default)
     reality = {'port':reality_port,'target':target+':443','sni':target,'fingerprint':'chrome',
                'short_id':secrets.token_hex(8),'path':'/'+secrets.token_hex(12)+'/',
                'inbound_tag':'loho-node-reality'}
-    bbr = ask_value('启用系统自带BBR（可选）？[y/N]：',
-                    lambda value: choice_value(value.lower(),('y','n','yes','no')),'n')
+    bbr = ask_value('启用系统自带BBR（可选）？'+('[Y/n]：' if old_bbr else '[y/N]：'),
+                    lambda value: choice_value(value.lower(),('y','n','yes','no')),'y' if old_bbr else 'n')
+    bbr_enabled = bbr in ('y','yes')
     api = choose_internal(10085,{80,port,reality_port})
     settings = {'domain':domain,'port':port,'api_endpoint':'127.0.0.1:'+str(api),
                 'reality':reality,'version':VERSION,'xray_version':XRAY_VERSION}
-    log('即将安装：HTTPS 面板 %s:%d；域名解析 %s。'%(domain,port,', '.join(records)))
-    log('节点：VLESS + XHTTP packet-up + REALITY，TCP%d，初始用户 ADMIN。'%reality_port)
-    public_ports = 'TCP80、TCP%d、TCP%d'%(port,reality_port)
-    log('需要公网 '+public_ports+'；继续即同意证书服务条款 https://letsencrypt.org/repository/ 。')
-    return settings,username,password,bbr in ('y','yes')
+    log('\n请确认安装配置')
+    log('管理后台：'+origin(settings)+'/node-view/')
+    log('后台用户名：'+username)
+    log(f'REALITY 节点：{domain}:{reality_port}（VLESS + XHTTP packet-up，初始用户 ADMIN）')
+    log('REALITY 目标：'+target)
+    log('域名解析：'+', '.join(records))
+    log(f'需放行公网 TCP 80（证书验证）、{reality_port}（节点）、{port}（面板）。')
+    log('启用 BBR：'+('是' if bbr_enabled else '否'))
+    return settings,username,password,bbr_enabled
 
 
 def xray_config(settings,clients,reality_private_key):
@@ -539,7 +557,19 @@ def apply_bbr(transaction):
 def install(files):
     global LOG
     preflight()
-    settings,username,password,bbr=settings_prompt()
+    answers = None
+    while True:
+        answers = settings_prompt(answers)
+        log('选择「开始安装」即同意证书服务条款 https://letsencrypt.org/repository/ 。')
+        action = ask_value('请选择 [1 开始安装 / 2 返回修改 / 3 退出]：',
+                           lambda value: choice_value(value,('1','2','3')))
+        if action == '1':
+            break
+        if action == '3':
+            log('已退出安装。')
+            return
+        log('回车保留当前设置。')
+    settings,username,password,bbr=answers
     LOG=Path('/root/loho-install-'+time.strftime('%Y%m%d-%H%M%S')+'-'+secrets.token_hex(3)+'.log'); write(LOG,'',0o600)
     transaction=Installation()
     try:
@@ -648,7 +678,7 @@ def install(files):
         log('[8/8] 安装完成：'+origin(settings)+'/node-view/')
         log('仅创建代理用户ADMIN；网站账号 '+username+'，密码为刚才设置的密码。')
         log('查看专属导入链接：sudo cat /root/loho-node-install.txt；二维码在网页用户管理中。')
-        log('请用电脑和手机导入节点，验证外部网络实际连接。')
+        log('如需验证公网连通性，可在手机或电脑上导入节点并试连。')
     except BaseException:
         try: transaction.cleanup()
         except BaseException as error: log('清理未完全完成：'+str(error))

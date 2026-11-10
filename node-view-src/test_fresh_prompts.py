@@ -73,6 +73,48 @@ class PromptTests(unittest.TestCase):
             settings,*_ = installer.settings_prompt()
         self.assertEqual((settings['port'],settings['reality']['port']),(3000,3001))
 
+    def test_install_only_starts_after_confirmation_of_edited_settings(self):
+        answers = iter([
+            'node.example.net','', 'admin-test','', '', 'y',
+            '', '9', '2',
+            '', '3000', '', '', '', '',
+            '1',
+        ])
+        with patch.object(installer.sys.stdin,'isatty',return_value=True), \
+             patch.object(installer,'preflight'), patch.object(installer,'free_port'), \
+             patch.object(installer,'node_domain',side_effect=lambda domain:(domain,['1.1.1.1'])), \
+             patch.object(installer.getpass,'getpass',side_effect=['saved-password','saved-password','']) as password, \
+             patch.object(installer,'log') as log, patch.object(installer,'LOG',None), \
+             patch.object(installer,'write') as write, patch.object(installer,'Installation'), \
+             patch.object(installer,'run',side_effect=RuntimeError('stop at apt')) as run:
+            def answer(prompt):
+                write.assert_not_called()
+                run.assert_not_called()
+                return next(answers)
+
+            with patch('builtins.input',side_effect=answer):
+                with self.assertRaisesRegex(RuntimeError,'stop at apt'):
+                    installer.install({})
+
+        run.assert_called_once_with(['apt-get','-o','DPkg::Lock::Timeout=120','update'])
+        messages = [call.args[0] for call in log.call_args_list]
+        self.assertIn('管理后台：https://node.example.net:3000/node-view/',messages)
+        self.assertIn('REALITY 节点：node.example.net:3001（VLESS + XHTTP packet-up，初始用户 ADMIN）',messages)
+        self.assertIn('后台用户名：admin-test',messages)
+        self.assertIn('启用 BBR：是',messages)
+        self.assertIn('回车保留当前设置。',messages)
+        self.assertNotIn('saved-password','\n'.join(messages))
+        self.assertEqual(password.call_count,3)
+
+    def test_exit_from_confirmation_does_not_start_installation(self):
+        with patch.object(installer,'preflight'), \
+             patch.object(installer,'settings_prompt',return_value=({},'loho','test-password',False)), \
+             patch('builtins.input',return_value='3'), patch.object(installer,'log'), \
+             patch.object(installer,'write') as write, patch.object(installer,'run') as run:
+            installer.install({})
+        write.assert_not_called()
+        run.assert_not_called()
+
     def test_reality_network_failure_keeps_other_settings(self):
         settings={'domain':'node.example.net','port':5000,
                   'reality':{'sni':'bad.example.net','target':'bad.example.net:443','port':443,'short_id':'abc123'}}
