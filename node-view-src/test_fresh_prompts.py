@@ -26,9 +26,8 @@ class PromptTests(unittest.TestCase):
             'bad.example.net','node.example.net',  # DNS failure
             'bad','5001','',                       # Invalid, occupied, default panel port
             'bad-email','', 'bad name','',        # Email and username
-            '4','',                               # Deployment choice
             '5000','',                            # REALITY port conflicts with panel
-            'https://www.apple.com','node.example.net','www.apple.com',
+            'https://www.apple.com','node.example.net','',
             'maybe','',
         ])
         prompts = []
@@ -46,11 +45,22 @@ class PromptTests(unittest.TestCase):
         self.assertEqual(prompts[0],prompts[1])
         self.assertEqual(prompts[2],prompts[3])
         self.assertEqual(prompts[3],prompts[4])
-        self.assertEqual(prompts[13:16],[prompts[13]]*3)
+        self.assertEqual(prompts[9],prompts[10])
+        self.assertEqual(prompts[11:14],[prompts[11]]*3)
         self.assertEqual((settings['domain'],settings['port'],settings['reality']['port']),
                          ('node.example.net',5000,443))
         self.assertEqual(settings['reality']['target'],'www.apple.com:443')
         self.assertEqual((email,username,password,bbr),('','loho','long-password-2',False))
+
+        inbound, = installer.xray_config(settings,[],'test-key')['inbounds']
+        self.assertEqual(inbound['port'],443)
+        self.assertEqual(inbound['streamSettings']['security'],'reality')
+        self.assertEqual(inbound['streamSettings']['xhttpSettings']['mode'],'packet-up')
+        nginx = installer.nginx_config(settings)
+        self.assertIn('listen 5000 ssl;',nginx)
+        self.assertIn('/.well-known/acme-challenge/',nginx)
+        self.assertNotIn(settings['reality']['path'],nginx)
+        self.assertNotIn('listen 443',nginx)
 
     def test_reality_network_failure_keeps_other_settings(self):
         settings={'domain':'node.example.net','port':5000,

@@ -2,7 +2,6 @@
 import argparse
 import ast
 import base64
-import copy
 import fcntl
 import getpass
 import hashlib
@@ -26,7 +25,7 @@ import types
 import uuid
 import zipfile
 
-VERSION = '10.2.1'
+VERSION = '10.3.0'
 XRAY_VERSION = '26.10.21'
 ASSETS = {
     'x86_64': ('Xray-linux-64.zip', '0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978'),
@@ -38,7 +37,6 @@ SITE = Path('/etc/nginx/sites-available/loho-node.conf')
 ENABLED = Path('/etc/nginx/sites-enabled/loho-node.conf')
 SNIPPET = Path('/etc/nginx/snippets/loho-node-view.conf')
 REPORT = Path('/root/loho-node-install.txt')
-INTERNAL_PORT = 33149
 LOG = None
 SERVICES = ('xray','loho-node-view','loho-node-manager','loho-node-auth','loho-node-traffic','loho-node-notify')
 TIMERS = ('loho-node-health.timer','loho-node-logrotate.timer')
@@ -178,7 +176,11 @@ def node_domain(value):
 
 
 def available_port(value, panel_port=None):
-    port = validate_port(value)
+    if not value.isascii() or not value.isdigit():
+        raise ValueError('端口必须是数字。')
+    port = int(value)
+    if not 1 <= port <= 65535 or port in (22, 80):
+        raise ValueError('端口需在 1–65535，且不能使用 22、80。')
     if panel_port is not None and ((port != 443 and port < 1024) or port == panel_port):
         raise ValueError('REALITY 端口需为 443 或 1024–65535，且须与 HTTPS 面板端口不同。')
     free_port(port)
@@ -233,14 +235,12 @@ def reality_domain(value, domain):
 
 
 def prompt_reality_domain(domain):
-    return ask_value('REALITY 目标域名（只填域名，可试 www.apple.com）：',
-                     lambda value: reality_domain(value, domain))
+    return ask_value('REALITY 目标域名 [www.apple.com]：',
+                     lambda value: reality_domain(value, domain), 'www.apple.com')
 
 
 def verify_reality_settings(settings):
-    reality = settings.get('reality')
-    if not reality:
-        return
+    reality = settings['reality']
     target = reality['sni']
     while True:
         try:
@@ -257,78 +257,54 @@ def verify_reality_settings(settings):
 def settings_prompt():
     if not sys.stdin.isatty(): raise ValueError('请下载或上传脚本后用 bash 运行，安装需要交互输入。')
     check_acme_port()
-    domain,records = ask_value('节点域名（A记录指向本机，普通DNS解析）：',node_domain)
-    port = ask_value('HTTPS 面板 / 兼容节点端口 [5000]：',available_port,'5000')
+    domain,records = ask_value('节点和后台域名（A 记录指向本机，普通 DNS 解析）：',node_domain)
+    port = ask_value('HTTPS 面板端口 [5000]：',available_port,'5000')
     email = ask_value('证书联系邮箱（可留空，回车跳过）：',certificate_email)
     username = ask_value('网站登录用户名 [loho]：',website_username,'loho')
     password = website_password()
-    choice = ask_value('部署方式：1=REALITY + XHTTP TLS 备用，2=仅 XHTTP TLS，3=WebSocket TLS [1]：',
-                       lambda value: choice_value(value,('1','2','3')),'1')
-    reality = None
-    if choice == '1':
-        reality_port = ask_value('REALITY 节点端口 [443]：',lambda value: available_port(value,port),'443')
-        log('REALITY 目标是供握手使用的 HTTPS 站点。只填域名，不加 https://、端口或路径。')
-        target = prompt_reality_domain(domain)
-        reality = {'port':reality_port,'target':target+':443','sni':target,'fingerprint':'chrome',
-                   'short_id':secrets.token_hex(8),'path':'/'+secrets.token_hex(12)+'/',
-                   'inbound_tag':'loho-node-reality'}
+    default_port = '3000' if port == 443 else '443'
+    reality_port = ask_value(f'REALITY 节点端口 [{default_port}]：',
+                             lambda value: available_port(value,port),default_port)
+    log('REALITY 目标是供握手使用的 HTTPS 站点。只填域名，不加 https://、端口或路径。')
+    target = prompt_reality_domain(domain)
+    reality = {'port':reality_port,'target':target+':443','sni':target,'fingerprint':'chrome',
+               'short_id':secrets.token_hex(8),'path':'/'+secrets.token_hex(12)+'/',
+               'inbound_tag':'loho-node-reality'}
     bbr = ask_value('启用系统自带BBR（可选）？[y/N]：',
                     lambda value: choice_value(value.lower(),('y','n','yes','no')),'n')
-    reserved = {80,port}
-    if reality:
-        reserved.add(reality['port'])
-    backend = choose_internal(33149,reserved); api = choose_internal(10085,reserved|{backend})
-    settings = {'domain':domain,'address':domain,'port':port,'path':'/'+secrets.token_hex(12)+'/',
-                'internal_port':backend,'api_endpoint':'127.0.0.1:'+str(api),'inbound_tag':'loho-node',
-                'transport':'ws' if choice=='3' else 'xhttp','version':VERSION,'xray_version':XRAY_VERSION}
-    if reality:
-        settings['reality'] = reality
-    log('即将安装：%s:%d / %s TLS / 仅ADMIN；域名解析 %s。'%(domain,port,settings['transport'],', '.join(records)))
-    public_ports = 'TCP80、TCP%d'%port
-    if reality:
-        log('主节点：VLESS + XHTTP packet-up + REALITY，独立 TCP%d。'%reality['port'])
-        if reality['port'] != 443:
-            log('Xray 建议 REALITY 优先使用 TCP443。')
-        public_ports += '、TCP%d'%reality['port']
+    api = choose_internal(10085,{80,port,reality_port})
+    settings = {'domain':domain,'port':port,'api_endpoint':'127.0.0.1:'+str(api),
+                'reality':reality,'version':VERSION,'xray_version':XRAY_VERSION}
+    log('即将安装：HTTPS 面板 %s:%d；域名解析 %s。'%(domain,port,', '.join(records)))
+    log('节点：VLESS + XHTTP packet-up + REALITY，TCP%d，初始用户 ADMIN。'%reality_port)
+    public_ports = 'TCP80、TCP%d、TCP%d'%(port,reality_port)
     log('需要公网 '+public_ports+'；继续即同意证书服务条款 https://letsencrypt.org/repository/ 。')
     return settings,email,username,password,bbr in ('y','yes')
 
 
-def xray_config(settings,clients,reality_private_key=None):
-    transport = settings['transport']
-    # Xray 26.10.21 expects a trusted header name, not an IP/CIDR list.
-    # Backend is loopback-only; Nginx overwrites both this marker and XFF.
-    stream = {'network':transport,'security':'none','sockopt':{'trustedXForwardedFor':['X-LoHo-Trusted-Proxy']}}
-    stream['xhttpSettings' if transport=='xhttp' else 'wsSettings'] = {'path':settings['path']}
-    if transport=='xhttp': stream['xhttpSettings']['mode'] = 'packet-up'
-    legacy = {'tag':settings['inbound_tag'],'listen':'127.0.0.1','port':settings['internal_port'],
-              'protocol':'vless','settings':{'clients':clients,'decryption':'none'},'streamSettings':stream,
-              'sniffing':{'enabled':True,'destOverride':['http','tls','quic'],'routeOnly':True}}
-    inbounds = [legacy]
-    reality = settings.get('reality')
-    if reality:
-        if not reality_private_key:
-            raise ValueError('缺少 REALITY 服务端密钥。')
-        primary = copy.deepcopy(legacy)
-        primary.update(tag=reality['inbound_tag'], listen='0.0.0.0', port=reality['port'], streamSettings={
-            'network':'xhttp','security':'reality',
-            'xhttpSettings':{'path':reality['path'],'mode':'packet-up'},
-            'realitySettings':{'target':reality['target'],'serverNames':[reality['sni']],
-                               'privateKey':reality_private_key,'shortIds':[reality['short_id']]},
-        })
-        inbounds.append(primary)
+def xray_config(settings,clients,reality_private_key):
+    if not reality_private_key:
+        raise ValueError('缺少 REALITY 服务端密钥。')
+    reality = settings['reality']
+    stream = {'network':'xhttp','security':'reality',
+              'xhttpSettings':{'path':reality['path'],'mode':'packet-up'},
+              'realitySettings':{'target':reality['target'],'serverNames':[reality['sni']],
+                                 'privateKey':reality_private_key,'shortIds':[reality['short_id']]}}
+    inbound = {'tag':reality['inbound_tag'],'listen':'0.0.0.0','port':reality['port'],
+               'protocol':'vless','settings':{'clients':clients,'decryption':'none'},'streamSettings':stream,
+               'sniffing':{'enabled':True,'destOverride':['http','tls','quic'],'routeOnly':True}}
     return {
         'log':{'access':'/var/log/xray/access.log','error':'/var/log/xray/error.log','loglevel':'warning'},
         'api':{'tag':'loho-local-api','listen':settings['api_endpoint'],'services':['StatsService','LoggerService']},
         'stats':{},'policy':{'levels':{'0':{'statsUserUplink':True,'statsUserDownlink':True}}},
-        'inbounds':inbounds,
+        'inbounds':[inbound],
         'outbounds':[{'tag':'direct','protocol':'freedom'},{'tag':'block','protocol':'blackhole'}],
         'routing':{'domainStrategy':'IPIfNonMatch','rules':[{'type':'field','ip':['geoip:private'],'outboundTag':'block'}]},
     }
 
 
 def nginx_config(settings,tls=True,modern=True):
-    domain,port,path = settings['domain'],settings['port'],settings['path']
+    domain,port = settings['domain'],settings['port']
     result = '''server {
     listen 80;
     server_name %s;
@@ -339,13 +315,6 @@ def nginx_config(settings,tls=True,modern=True):
 '''%(domain,'return 301 '+origin(settings)+'$request_uri;' if tls else 'return 404;')
     if not tls: return result
     http2 = 'listen %d ssl;\n    http2 on;'%port if modern else 'listen %d ssl http2;'%port
-    proxy = '''proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-''' if settings['transport']=='ws' else '''proxy_set_header Connection "";
-        client_max_body_size 8m;
-        client_body_timeout 300s;
-        proxy_request_buffering off;
-'''
     return result+'''server {
     %s
     server_name %s;
@@ -359,22 +328,10 @@ def nginx_config(settings,tls=True,modern=True):
     error_log /var/log/nginx/loho-node-error.log warn;
     root /var/www/loho-site;
     index index.html;
-    location ^~ %s {
-        proxy_pass http://127.0.0.1:%d;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-LoHo-Trusted-Proxy "1";
-        %s
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        proxy_buffering off;
-    }
     include /etc/nginx/snippets/loho-node-view.conf;
     location / { try_files $uri $uri/ =404; }
 }
-'''%(http2,domain,domain,domain,path,settings['internal_port'],proxy)
+'''%(http2,domain,domain,domain)
 
 
 XRAY_UNIT = '''[Unit]
@@ -403,7 +360,7 @@ WantedBy=multi-user.target
 
 
 def xray_unit(settings):
-    if settings.get('reality', {}).get('port') == 443:
+    if settings['reality']['port'] == 443:
         return XRAY_UNIT.replace('CapabilityBoundingSet=\n',
                                  'CapabilityBoundingSet=CAP_NET_BIND_SERVICE\nAmbientCapabilities=CAP_NET_BIND_SERVICE\n')
     return XRAY_UNIT
@@ -526,9 +483,8 @@ def check_gateway(settings,username,password):
                 users=json.loads(raw)['users']
                 if len(users)!=1 or users[0]['label']!='ADMIN': raise ValueError('初始代理用户不是唯一的ADMIN。')
                 status,_,credential=tls_request(settings,'/node-view/manager/api/credential?key='+users[0]['key'],cookie=cookie)
-                expected='reality' if settings.get('reality') else 'tls'
-                if status!=200 or 'security='+expected not in json.loads(credential)['link']:
-                    raise ValueError('用户管理导出的主节点链接不匹配。')
+                if status!=200 or 'security=reality' not in json.loads(credential)['link']:
+                    raise ValueError('用户管理导出的 REALITY 链接不匹配。')
     finally:
         # Login-check sessions are short-lived, and explicitly revoked on success.
         tls_request(settings,'/node-view/auth/api/logout',{},cookie,csrf)
@@ -617,9 +573,7 @@ def install(files):
         for name in ('access.log','error.log'): write(Path('/var/log/xray')/name,'',0o640,uid,gid)
         client={'id':str(uuid.uuid4()),'email':'ADMIN','level':0}
         state={'accounts':[{'key':secrets.token_hex(12),'enabled':True,'client':client}]}
-        private_key = None
-        if settings.get('reality'):
-            private_key, settings['reality']['public_key'] = reality_keypair()
+        private_key, settings['reality']['public_key'] = reality_keypair()
         write(CONF/'config.json',json_text(xray_config(settings,[client],private_key)),0o640,0,gid)
         write('/etc/loho-node-manager/node.json',json_text(settings),0o600)
         write('/var/lib/loho-node-manager/state.json',json_text(state),0o600)
@@ -641,7 +595,7 @@ def install(files):
         namespace={'__name__':'fresh_identity'}; exec(compile(files['identities.py'],'identities.py','exec'),namespace)
         namespace['sync_catalog'](state,path=Path('/var/lib/loho-node-view/identity/accounts.json'))
         os.chown(Path('/var/lib/loho-node-view/identity/accounts.json'),0,webgid)
-        release=json.loads(files['_release']); release.update(version=VERSION,installed=time.time(),certificate='/etc/letsencrypt/live/loho-'+settings['domain']+'/fullchain.pem',transport=settings['transport'],xray_version=XRAY_VERSION)
+        release=json.loads(files['_release']); release.update(version=VERSION,installed=time.time(),certificate='/etc/letsencrypt/live/loho-'+settings['domain']+'/fullchain.pem',transport='xhttp',xray_version=XRAY_VERSION)
         write('/etc/loho-node-view/release.json',json_text(release),0o600)
         write(SNIPPET,files['_nginx_snippet'].replace('@@SECRET@@',secret),0o600)
         write('/etc/systemd/system/xray.service',xray_unit(settings))
@@ -696,9 +650,8 @@ def install(files):
         run(['/usr/local/bin/loho-node','health']); run(['/usr/local/bin/loho-node','status'])
         namespace={'__name__':'fresh_credentials'}; exec(compile(files['manage_users.py'],'manage_users.py','exec'),namespace)
         report=['LoHo 完整一键部署 '+VERSION,'面板：'+origin(settings)+'/node-view/','网站账号：'+username,'网站密码：安装时设置，不保存明文。','代理用户 ADMIN：']
-        for title,uri in namespace['credential_links'](client,'ADMIN',settings['path']):
-            report.extend([title,uri,''])
-        report.extend(['主节点二维码在登录后的用户管理页面查看。','当前用户链接：sudo loho-node links',
+        report.extend(['REALITY 节点',namespace['link'](client,'ADMIN'),''])
+        report.extend(['节点二维码在登录后的用户管理页面查看。','当前用户链接：sudo loho-node links',
                        '诊断：sudo loho-node status','续期演练：sudo loho-node renew-test','安装日志：'+str(LOG)])
         write(REPORT,'\n'.join(report)+'\n',0o600); transaction.armed=False
         log('[8/8] 安装完成：'+origin(settings)+'/node-view/')

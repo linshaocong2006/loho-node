@@ -13,7 +13,7 @@ import tempfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '10.2.1'
+VERSION = '10.3.0'
 PLACEHOLDER = 'd' * 64
 
 
@@ -146,7 +146,7 @@ def build(base, target):
     files['_release'] = json.dumps(release,ensure_ascii=False)
     # Reuse the vetted low-level helpers from the full source or the published bundle.
     tree = ast.parse(original)
-    names = {'log','run','write','directory','json_text','validate_domain','validate_port','origin','download_xray','LocalTLS'}
+    names = {'log','run','write','directory','json_text','validate_domain','origin','download_xray','LocalTLS'}
     helpers_by_name = {n.name:ast.get_source_segment(original,n) for n in tree.body
                        if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in names}
     if helpers_by_name.keys() != names:

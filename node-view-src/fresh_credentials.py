@@ -8,59 +8,27 @@ from urllib.parse import quote, urlencode
 SETTINGS = json.loads(Path('/etc/loho-node-manager/node.json').read_text())
 CONFIG = Path('/usr/local/etc/xray/config.json')
 XRAY = '/usr/local/bin/xray'
-DOMAIN, ADDRESS, PORT = SETTINGS['domain'], SETTINGS['address'], SETTINGS['port']
+DOMAIN, PORT = SETTINGS['domain'], SETTINGS['port']
+REALITY = SETTINGS['reality']
 
 
 def managed_inbound(config):
-    return managed_inbounds(config)[0]
-
-
-def checked_inbound(config, tag, transport, security):
-    found = [b for b in config.get('inbounds', []) if b.get('tag') == tag]
+    found = [b for b in config.get('inbounds', []) if b.get('tag') == REALITY['inbound_tag']]
     if len(found) != 1 or not isinstance(found[0].get('settings', {}).get('clients'), list):
         raise ValueError('没有找到唯一的受管理节点入站，未修改配置。')
     inbound = found[0]
     stream = inbound.get('streamSettings', {})
-    if inbound.get('protocol') != 'vless' or stream.get('network') != transport or stream.get('security', 'none') != security:
+    if inbound.get('protocol') != 'vless' or stream.get('network') != 'xhttp' or stream.get('security') != 'reality':
         raise ValueError('受管理节点入站的协议或安全方式不一致，未修改配置。')
     return inbound
 
 
-def managed_inbounds(config):
-    legacy = checked_inbound(config, SETTINGS['inbound_tag'], SETTINGS['transport'], 'none')
-    reality = SETTINGS.get('reality')
-    if not reality:
-        return (legacy,)
-    primary = checked_inbound(config, reality['inbound_tag'], 'xhttp', 'reality')
-    if primary['settings']['clients'] != legacy['settings']['clients']:
-        raise ValueError('REALITY 和 TLS 入站的用户不同步，未修改配置。')
-    return legacy, primary
-
-
-def link(client, label, path, *, use_reality=True):
-    reality = SETTINGS.get('reality') if use_reality else None
-    port = PORT
-    if reality:
-        port = reality['port']
-        query = {'encryption':'none','security':'reality','type':'xhttp','mode':'packet-up',
-                 'sni':reality['sni'],'fp':reality['fingerprint'],'pbk':reality['public_key'],
-                 'sid':reality['short_id'],'path':reality['path']}
-    else:
-        transport = SETTINGS['transport']
-        query = {'encryption':'none','security':'tls','sni':DOMAIN,'type':transport,
-                 'host':DOMAIN,'path':path,'alpn':'h2,http/1.1' if transport=='xhttp' else 'http/1.1'}
-        if transport == 'xhttp':
-            query['mode'] = 'packet-up'
+def link(client, label):
+    query = {'encryption':'none','security':'reality','type':'xhttp','mode':'packet-up',
+             'sni':REALITY['sni'],'fp':REALITY['fingerprint'],'pbk':REALITY['public_key'],
+             'sid':REALITY['short_id'],'path':REALITY['path']}
     return 'vless://%s@%s:%s?%s#%s' % (
-        client['id'], ADDRESS, port, urlencode(query, quote_via=quote), quote(label))
-
-
-def credential_links(client, label, path):
-    if SETTINGS.get('reality'):
-        yield 'REALITY 主节点', link(client, label, path)
-        yield 'TLS 备用节点', link(client, label+'-TLS', path, use_reality=False)
-    else:
-        yield 'TLS 节点', link(client, label, path)
+        client['id'], DOMAIN, REALITY['port'], urlencode(query, quote_via=quote), quote(label))
 
 
 def replace(path, data, metadata=None, mode=0o600):

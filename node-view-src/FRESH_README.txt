@@ -1,12 +1,12 @@
-LoHo 完整一键部署 10.2.1
+LoHo 完整一键部署 10.3.0
 
 运行：将 loho-node-onekey.sh 上传到空白 VPS 的 /root/ 后执行：
   sudo bash /root/loho-node-onekey.sh
 
 支持范围：Debian 12、13；Ubuntu 22.04、24.04、26.04；x86_64 / aarch64；systemd。
 这不是重装系统的工具，也不是已有节点的覆盖升级工具。
-默认部署 VLESS + XHTTP(packet-up) + REALITY 主节点（TCP443），以及 XHTTP + TLS 备用节点和面板（TCP5000）。
-安装时也可选仅 XHTTP + TLS，或 WebSocket + TLS。两个代理入口共用账号、日志和流量统计。
+部署一个 VLESS + XHTTP(packet-up) + REALITY 节点（默认 TCP443），以及独立的 Nginx HTTPS 面板（默认 TCP5000）。
+节点与面板共用安装时填写的连接域名。面板证书由 Certbot 自动续期。
 仅创建 ADMIN 一个代理用户，后续在用户管理网页新增、改名或删除。
 节点账号用于代理连接，与网站登录账号独立设置。
 包含当前仪表盘、连接历史、用户管理、通知、系统状态、登录设备管理。
@@ -15,27 +15,26 @@ LoHo 完整一键部署 10.2.1
 安装前：准备域名 A 记录指向服务器；默认 IPv4 入口，若有 AAAA 记录需先正确处理。
 使用普通 DNS 解析，不经 CDN 代理；域名每次安装时手动输入。
 两个对外端口可在安装时修改。TCP80 用于申请及续期面板证书。
-REALITY 目标域名是供握手使用的 HTTPS 站点。可先试 www.apple.com，只填写域名，不带 https://、端口或路径。
+REALITY 目标域名是供握手使用的 HTTPS 站点，默认为 www.apple.com。自定义时只填写域名，不带 https://、端口或路径。
 目标需从 VPS 通过公网 TCP443 连接，支持 TLS 1.3 / HTTP/2，并与节点域名不同。
 安装器不会关闭防火墙、修改 SSH 或重装内核；服务商安全组和主机防火墙须允许 TCP80 和所选 HTTPS、REALITY 端口。
 可选证书联系邮箱，空白可跳过；不需要邮箱密码。到期监测不依赖证书机构邮件。
-主节点需要支持 VLESS + XHTTP + REALITY 的客户端；v2rayN/v2rayNG 使用兼容版本的 Xray 核心。
-尚未确认版本的旧客户端可选 WebSocket 模式。实际手机端连通性由部署后导入验证。
+客户端需支持 VLESS + XHTTP + REALITY。v2rayN/v2rayNG 使用兼容版本的 Xray 核心。
 
-输入：域名、端口[5000]、联系邮箱[可留空]、网站用户名[loho]、密码、部署方式[REALITY + XHTTP TLS 备用]。
-选 REALITY 时继续填写节点端口[443]和目标域名。
+输入：域名、面板端口[5000]、联系邮箱[可留空]、网站用户名[loho]、密码、REALITY 端口[443]和目标域名[www.apple.com]。
+面板选用 443 时，REALITY 默认使用 3000。
 输入校验失败时会提示并重新询问当前项。两次密码不一致时重新输入并确认密码。REALITY 目标的连通性检查失败时可更换目标，已填写的其他设置会保留。
 可选开启系统自带BBR；默认不修改。仅检测到内核支持时应用独立sysctl文件。
 安装结束后：
   面板 https://你的域名:5000/node-view/
   sudo cat /root/loho-node-install.txt
-两条专属链接保存在上述 root 私有文件内；主节点二维码在登录后的用户管理页面查看。
+ADMIN 的专属链接保存在上述 root 私有文件内，二维码可在登录后的用户管理页面查看。
 密码以散列保存，不保留明文。不要公开导入链接、二维码或安装结果文件。
 
 维护命令（安装完成后才可用）：
   sudo loho-node status            检查服务、采集、证书及续期任务
   sudo loho-node check             检查Xray/Nginx配置及本机TLS网页登录保护
-  sudo loho-node check --probe     实测各个已部署的代理入口
+  sudo loho-node check --probe     实测 REALITY 代理链路
   sudo loho-node reset-password    修改网站密码，原记住设备会失效
   sudo loho-node renew-test        运行证书续期演练，不签发生产证书
   sudo loho-node links             查看当前用户的导入链接

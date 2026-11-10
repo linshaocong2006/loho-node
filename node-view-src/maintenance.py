@@ -78,24 +78,20 @@ class TLS(http.client.HTTPSConnection):
         self.sock=self._context.wrap_socket(sock,server_hostname=self.settings['domain'])
 
 
-def probe(settings, use_reality=False):
-    """Connect a temporary Xray client and fetch public HTTPS through the selected inbound."""
+def probe(settings):
+    """Connect a temporary Xray client and fetch public HTTPS through REALITY."""
     from manage_users import managed_inbound
-    node=json.loads(Path('/usr/local/etc/xray/config.json').read_text());client=managed_inbound(node)['settings']['clients'][0]
+    node=json.loads(Path('/usr/local/etc/xray/config.json').read_text())
+    clients=managed_inbound(node)['settings']['clients']
+    if not clients:raise ValueError('请启用至少一个代理用户再执行完整链路检查。')
+    client=clients[0]
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
-    reality = settings.get('reality') if use_reality else None
-    upstream_port = settings['port']
-    if reality:
-        upstream_port = reality['port']
-        stream = {'network':'xhttp','security':'reality','xhttpSettings':{'path':reality['path'],'mode':'packet-up'},
-                  'realitySettings':{'serverName':reality['sni'],'fingerprint':reality['fingerprint'],
-                                     'password':reality['public_key'],'shortId':reality['short_id']}}
-    else:
-        transport=settings['transport'];stream={'network':transport,'security':'tls','tlsSettings':{'serverName':settings['domain'],'alpn':['h2','http/1.1'] if transport=='xhttp' else ['http/1.1']}}
-        stream['xhttpSettings' if transport=='xhttp' else 'wsSettings']={'path':settings['path'],'host':settings['domain']}
-        if transport=='xhttp':stream['xhttpSettings']['mode']='packet-up'
+    reality = settings['reality']
+    stream = {'network':'xhttp','security':'reality','xhttpSettings':{'path':reality['path'],'mode':'packet-up'},
+              'realitySettings':{'serverName':reality['sni'],'fingerprint':reality['fingerprint'],
+                                 'password':reality['public_key'],'shortId':reality['short_id']}}
     config={'log':{'loglevel':'warning'},'inbounds':[{'listen':'127.0.0.1','port':port,'protocol':'socks','settings':{'auth':'noauth','udp':False}}],
-            'outbounds':[{'protocol':'vless','settings':{'vnext':[{'address':'127.0.0.1','port':upstream_port,'users':[{'id':client['id'],'encryption':'none'}]}]},'streamSettings':stream}]}
+            'outbounds':[{'protocol':'vless','settings':{'vnext':[{'address':'127.0.0.1','port':reality['port'],'users':[{'id':client['id'],'encryption':'none'}]}]},'streamSettings':stream}]}
     with tempfile.TemporaryDirectory(prefix='loho-probe-') as folder:
         path=Path(folder)/'client.json';path.write_text(json.dumps(config));os.chmod(path,0o600)
         with (Path(folder)/'client.log').open('w+') as output:
@@ -115,8 +111,7 @@ def probe(settings, use_reality=False):
                              '--connect-timeout','8','--max-time','18','--output','/dev/null',url],timeout=22)
                         return
                     except subprocess.SubprocessError:pass
-                label = 'REALITY' if reality else 'TLS'
-                raise ValueError(label+' 完整代理连通检查失败：请检查服务端线路、域名和传输配置。')
+                raise ValueError('REALITY 完整代理连通检查失败：请检查服务端线路、目标站点和传输配置。')
             finally:
                 process.terminate()
                 try:process.wait(timeout=5)
@@ -133,8 +128,6 @@ def check(with_probe=False):
             if r.status!=expected:raise ValueError(path+'检查失败，HTTP'+str(r.status))
         finally:c.close()
     if with_probe:
-        if settings.get('reality'):
-            probe(settings, use_reality=True)
         probe(settings)
     print('Xray、Nginx配置和TLS登录保护通过'+('；完整代理链路通过。' if with_probe else '。'))
 
@@ -175,11 +168,10 @@ def main():
     elif args.action=='renew-test':
         settings=json.loads(NODE.read_text());print(run(['certbot','renew','--cert-name','loho-'+settings['domain'],'--dry-run','--run-deploy-hooks'],timeout=300))
     elif args.action=='links':
-        from manage_users import credential_links,managed_inbound
-        settings=json.loads(NODE.read_text());config=json.loads(Path('/usr/local/etc/xray/config.json').read_text())
+        from manage_users import link,managed_inbound
+        config=json.loads(Path('/usr/local/etc/xray/config.json').read_text())
         for client in managed_inbound(config)['settings']['clients']:
-            for title,uri in credential_links(client,client['email'],settings['path']):
-                print(client['email']+' / '+title+'\n'+uri+'\n')
+            print(client['email']+' / REALITY\n'+link(client,client['email'])+'\n')
 
 
 if __name__=='__main__':
