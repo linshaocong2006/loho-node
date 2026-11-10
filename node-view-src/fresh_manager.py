@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent/'vendor'))
-from manage_users import link, replace, CONFIG, XRAY, managed_inbound, managed_inbounds
+from manage_users import link, replace, CONFIG, XRAY, managed_inbound
 
 ROOT=Path('/var/lib/loho-node-manager')
 STATE=ROOT/'state.json'
@@ -110,8 +110,7 @@ def change(config,state,action,key,label):
     else:raise ValueError('不支持的操作。')
     active=[a['client'] for a in accounts if a['enabled']]
     if not accounts:raise ValueError('至少保留一个节点账号，可以将其暂停。')
-    for target in managed_inbounds(config):
-        target['settings']['clients']=copy.deepcopy(active)
+    inbound(config)['settings']['clients']=copy.deepcopy(active)
     return config,state
 
 
@@ -234,12 +233,11 @@ class Handler(BaseHTTPRequestHandler):
                     result={'users':[public_account(a) for a in state['accounts']],
                             'revision':rev,'csrf':csrf(actor,key),'busy':BUSY,'actions':['add','rename','delete','disable','enable']}
                 elif url.path=='/credential':
-                    _,config,state,_=load()
+                    _,_,state,_=load()
                     account=next((a for a in state['accounts'] if a['key']==parse_qs(url.query).get('key',[''])[0]),None)
                     if not account:raise ValueError('没有找到用户。')
                     client=account['client'];label=client.get('email','')
-                    path=next(v['path'] for k,v in inbound(config)['streamSettings'].items() if k in ('xhttpSettings','wsSettings'))
-                    uri=link(client,label,path)
+                    uri=link(client,label)
                     import qrcode
                     qr=qrcode.QRCode(border=4,error_correction=qrcode.constants.ERROR_CORRECT_M)
                     qr.add_data(uri);qr.make(fit=True)

@@ -8,11 +8,12 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import tempfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '10.2.1'
+VERSION = '10.3.3'
 PLACEHOLDER = 'd' * 64
 
 
@@ -113,6 +114,18 @@ def read_bundle(path):
     return json.loads(gzip.decompress(compressed))
 
 
+def update_history(files, release):
+    files['history.py'] = (ROOT/'v8/history.py').read_text()
+    source = (ROOT/'web/connections-v8.js').read_text()
+    asset = 'connections-fast.'+hashlib.sha256(source.encode()).hexdigest()[:20]+'.js'
+    old_asset, = (name for name, info in release['assets'].items() if info['source']=='connections-fast.js')
+    release['assets'][asset] = release['assets'].pop(old_asset)
+    files.pop('www/assets/'+old_asset)
+    files['www/assets/'+asset] = source
+    for name in ('www/connections.html', '_nginx_snippet'):
+        files[name] = files[name].replace(old_asset, asset)
+
+
 def build(base, target):
     if base is None:
         files = payload()
@@ -124,13 +137,16 @@ def build(base, target):
                          'maintenance.py':'maintenance.py','README.txt':'FRESH_README.txt'}.items():
         files[name] = (ROOT/source).read_text()
     release = json.loads(files['_release'])
+    update_history(files, release)
+    patch_auth_socket = runpy.run_path(str(ROOT/'upgrade-auth-socket.py'))['patch_source']
+    files['auth.py'] = patch_auth_socket(files['auth.py'])
     files['_nginx_snippet'] = re.sub(r'(X-LoHo-Login-Version ")[0-9.]+(")',
                                      lambda match: match[1] + VERSION + match[2], files['_nginx_snippet'])
     release['version'] = VERSION
     files['_release'] = json.dumps(release,ensure_ascii=False)
     # Reuse the vetted low-level helpers from the full source or the published bundle.
     tree = ast.parse(original)
-    names = {'log','run','write','directory','json_text','validate_domain','validate_port','origin','download_xray','LocalTLS'}
+    names = {'log','run','write','directory','json_text','validate_domain','origin','download_xray','LocalTLS'}
     helpers_by_name = {n.name:ast.get_source_segment(original,n) for n in tree.body
                        if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in names}
     if helpers_by_name.keys() != names:

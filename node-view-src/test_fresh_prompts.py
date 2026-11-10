@@ -25,10 +25,9 @@ class PromptTests(unittest.TestCase):
         inputs = iter([
             'bad.example.net','node.example.net',  # DNS failure
             'bad','5001','',                       # Invalid, occupied, default panel port
-            'bad-email','', 'bad name','',        # Email and username
-            '4','',                               # Deployment choice
+            'bad name','',                        # Invalid, then default username
             '5000','',                            # REALITY port conflicts with panel
-            'https://www.apple.com','node.example.net','www.apple.com',
+            'https://www.apple.com','node.example.net','',
             'maybe','',
         ])
         prompts = []
@@ -41,16 +40,80 @@ class PromptTests(unittest.TestCase):
         with patch.object(installer.sys.stdin,'isatty',return_value=True), patch('builtins.input',side_effect=answer), \
              patch.object(installer.socket,'getaddrinfo',side_effect=resolve), patch.object(installer,'free_port',side_effect=free), \
              patch.object(installer.getpass,'getpass',side_effect=passwords), patch.object(installer,'log'):
-            settings,email,username,password,bbr = installer.settings_prompt()
+            settings,username,password,bbr = installer.settings_prompt()
 
         self.assertEqual(prompts[0],prompts[1])
         self.assertEqual(prompts[2],prompts[3])
         self.assertEqual(prompts[3],prompts[4])
-        self.assertEqual(prompts[13:16],[prompts[13]]*3)
+        self.assertEqual(prompts[5:7],['网站登录用户名 [loho]：']*2)
+        self.assertEqual(prompts[7],prompts[8])
+        self.assertEqual(prompts[9:12],[prompts[9]]*3)
         self.assertEqual((settings['domain'],settings['port'],settings['reality']['port']),
-                         ('node.example.net',5000,443))
+                         ('node.example.net',5000,3000))
         self.assertEqual(settings['reality']['target'],'www.apple.com:443')
-        self.assertEqual((email,username,password,bbr),('','loho','long-password-2',False))
+        self.assertEqual((username,password,bbr),('loho','long-password-2',False))
+
+        inbound, = installer.xray_config(settings,[],'test-key')['inbounds']
+        self.assertEqual(inbound['port'],3000)
+        self.assertEqual(inbound['streamSettings']['security'],'reality')
+        self.assertEqual(inbound['streamSettings']['xhttpSettings']['mode'],'packet-up')
+        nginx = installer.nginx_config(settings)
+        self.assertIn('listen 5000 ssl;',nginx)
+        self.assertIn('/.well-known/acme-challenge/',nginx)
+        self.assertNotIn(settings['reality']['path'],nginx)
+        self.assertNotIn('listen 3000',nginx)
+
+    def test_default_reality_port_avoids_panel_on_3000(self):
+        answers = ['node.example.net','3000','','','','']
+        with patch.object(installer.sys.stdin,'isatty',return_value=True), \
+             patch('builtins.input',side_effect=answers), \
+             patch.object(installer,'node_domain',return_value=('node.example.net',['1.1.1.1'])), \
+             patch.object(installer,'free_port'), patch.object(installer,'website_password'), \
+             patch.object(installer,'log'):
+            settings,*_ = installer.settings_prompt()
+        self.assertEqual((settings['port'],settings['reality']['port']),(3000,3001))
+
+    def test_install_only_starts_after_confirmation_of_edited_settings(self):
+        answers = iter([
+            'node.example.net','', 'admin-test','', '', 'y',
+            '', '9', '2',
+            '', '3000', '', '', '', '',
+            '1',
+        ])
+        with patch.object(installer.sys.stdin,'isatty',return_value=True), \
+             patch.object(installer,'preflight'), patch.object(installer,'free_port'), \
+             patch.object(installer,'node_domain',side_effect=lambda domain:(domain,['1.1.1.1'])), \
+             patch.object(installer.getpass,'getpass',side_effect=['saved-password','saved-password','']) as password, \
+             patch.object(installer,'log') as log, patch.object(installer,'LOG',None), \
+             patch.object(installer,'write') as write, patch.object(installer,'Installation'), \
+             patch.object(installer,'run',side_effect=RuntimeError('stop at apt')) as run:
+            def answer(prompt):
+                write.assert_not_called()
+                run.assert_not_called()
+                return next(answers)
+
+            with patch('builtins.input',side_effect=answer):
+                with self.assertRaisesRegex(RuntimeError,'stop at apt'):
+                    installer.install({})
+
+        run.assert_called_once_with(['apt-get','-o','DPkg::Lock::Timeout=120','update'])
+        messages = [call.args[0] for call in log.call_args_list]
+        self.assertIn('管理后台：https://node.example.net:3000/node-view/',messages)
+        self.assertIn('REALITY 节点：node.example.net:3001（VLESS + XHTTP packet-up，初始用户 ADMIN）',messages)
+        self.assertIn('后台用户名：admin-test',messages)
+        self.assertIn('启用 BBR：是',messages)
+        self.assertIn('回车保留当前设置。',messages)
+        self.assertNotIn('saved-password','\n'.join(messages))
+        self.assertEqual(password.call_count,3)
+
+    def test_exit_from_confirmation_does_not_start_installation(self):
+        with patch.object(installer,'preflight'), \
+             patch.object(installer,'settings_prompt',return_value=({},'loho','test-password',False)), \
+             patch('builtins.input',return_value='3'), patch.object(installer,'log'), \
+             patch.object(installer,'write') as write, patch.object(installer,'run') as run:
+            installer.install({})
+        write.assert_not_called()
+        run.assert_not_called()
 
     def test_reality_network_failure_keeps_other_settings(self):
         settings={'domain':'node.example.net','port':5000,
