@@ -13,7 +13,7 @@ import tempfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '10.3.0'
+VERSION = '10.3.1'
 PLACEHOLDER = 'd' * 64
 
 

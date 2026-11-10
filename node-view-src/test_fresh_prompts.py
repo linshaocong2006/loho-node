@@ -48,19 +48,29 @@ class PromptTests(unittest.TestCase):
         self.assertEqual(prompts[9],prompts[10])
         self.assertEqual(prompts[11:14],[prompts[11]]*3)
         self.assertEqual((settings['domain'],settings['port'],settings['reality']['port']),
-                         ('node.example.net',5000,443))
+                         ('node.example.net',5000,3000))
         self.assertEqual(settings['reality']['target'],'www.apple.com:443')
         self.assertEqual((email,username,password,bbr),('','loho','long-password-2',False))
 
         inbound, = installer.xray_config(settings,[],'test-key')['inbounds']
-        self.assertEqual(inbound['port'],443)
+        self.assertEqual(inbound['port'],3000)
         self.assertEqual(inbound['streamSettings']['security'],'reality')
         self.assertEqual(inbound['streamSettings']['xhttpSettings']['mode'],'packet-up')
         nginx = installer.nginx_config(settings)
         self.assertIn('listen 5000 ssl;',nginx)
         self.assertIn('/.well-known/acme-challenge/',nginx)
         self.assertNotIn(settings['reality']['path'],nginx)
-        self.assertNotIn('listen 443',nginx)
+        self.assertNotIn('listen 3000',nginx)
+
+    def test_default_reality_port_avoids_panel_on_3000(self):
+        answers = ['node.example.net','3000','','','','','']
+        with patch.object(installer.sys.stdin,'isatty',return_value=True), \
+             patch('builtins.input',side_effect=answers), \
+             patch.object(installer,'node_domain',return_value=('node.example.net',['1.1.1.1'])), \
+             patch.object(installer,'free_port'), patch.object(installer,'website_password'), \
+             patch.object(installer,'log'):
+            settings,*_ = installer.settings_prompt()
+        self.assertEqual((settings['port'],settings['reality']['port']),(3000,3001))
 
     def test_reality_network_failure_keeps_other_settings(self):
         settings={'domain':'node.example.net','port':5000,

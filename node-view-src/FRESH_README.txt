@@ -1,11 +1,11 @@
-LoHo 完整一键部署 10.3.0
+LoHo 完整一键部署 10.3.1
 
 运行：将 loho-node-onekey.sh 上传到空白 VPS 的 /root/ 后执行：
   sudo bash /root/loho-node-onekey.sh
 
 支持范围：Debian 12、13；Ubuntu 22.04、24.04、26.04；x86_64 / aarch64；systemd。
 这不是重装系统的工具，也不是已有节点的覆盖升级工具。
-部署一个 VLESS + XHTTP(packet-up) + REALITY 节点（默认 TCP443），以及独立的 Nginx HTTPS 面板（默认 TCP5000）。
+部署一个 VLESS + XHTTP(packet-up) + REALITY 节点（默认 TCP3000），以及独立的 Nginx HTTPS 面板（默认 TCP5000）。
 节点与面板共用安装时填写的连接域名。面板证书由 Certbot 自动续期。
 仅创建 ADMIN 一个代理用户，后续在用户管理网页新增、改名或删除。
 节点账号用于代理连接，与网站登录账号独立设置。
@@ -21,8 +21,8 @@ REALITY 目标域名是供握手使用的 HTTPS 站点，默认为 www.apple.com
 可选证书联系邮箱，空白可跳过；不需要邮箱密码。到期监测不依赖证书机构邮件。
 客户端需支持 VLESS + XHTTP + REALITY。v2rayN/v2rayNG 使用兼容版本的 Xray 核心。
 
-输入：域名、面板端口[5000]、联系邮箱[可留空]、网站用户名[loho]、密码、REALITY 端口[443]和目标域名[www.apple.com]。
-面板选用 443 时，REALITY 默认使用 3000。
+输入：域名、面板端口[5000]、联系邮箱[可留空]、网站用户名[loho]、密码、REALITY 端口[3000]和目标域名[www.apple.com]。
+面板选用 3000 时，REALITY 默认使用 3001。
 输入校验失败时会提示并重新询问当前项。两次密码不一致时重新输入并确认密码。REALITY 目标的连通性检查失败时可更换目标，已填写的其他设置会保留。
 可选开启系统自带BBR；默认不修改。仅检测到内核支持时应用独立sysctl文件。
 安装结束后：

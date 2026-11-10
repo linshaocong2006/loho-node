@@ -25,7 +25,7 @@ import types
 import uuid
 import zipfile
 
-VERSION = '10.3.0'
+VERSION = '10.3.1'
 XRAY_VERSION = '26.10.21'
 ASSETS = {
     'x86_64': ('Xray-linux-64.zip', '0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978'),
@@ -262,7 +262,7 @@ def settings_prompt():
     email = ask_value('证书联系邮箱（可留空，回车跳过）：',certificate_email)
     username = ask_value('网站登录用户名 [loho]：',website_username,'loho')
     password = website_password()
-    default_port = '3000' if port == 443 else '443'
+    default_port = '3001' if port == 3000 else '3000'
     reality_port = ask_value(f'REALITY 节点端口 [{default_port}]：',
                              lambda value: available_port(value,port),default_port)
     log('REALITY 目标是供握手使用的 HTTPS 站点。只填域名，不加 https://、端口或路径。')
