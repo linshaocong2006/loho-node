@@ -20,8 +20,8 @@ RELEASE = Path('/etc/loho-node-view/release.json')
 SNIPPET = Path('/etc/nginx/snippets/loho-node-view.conf')
 BACKUPS = Path('/var/backups/loho-node-view')
 COLLECTOR = 'loho-node-view.service'
-PAYLOAD_URL = 'https://raw.githubusercontent.com/linshaocong2006/loho-node/ee13a9a762da6112bda498379dc8c255b0a1c0f1/loho-node-upgrade.py'
-PAYLOAD_SHA256 = 'bcb7374d3527ff108d23f6a237e990719a86477133c53c3bb113010143ce41d7'
+PAYLOAD_URL = 'https://raw.githubusercontent.com/linshaocong2006/loho-node/87eb7e609e27065800ffde3872b83395322e981e/loho-node-upgrade.py'
+PAYLOAD_SHA256 = '7d5da2c6f12f2435992c52f497b26d4e623583ca570f36d7042f4b84b7aac1d1'
 
 
 def read_file(path):
@@ -66,14 +66,23 @@ def changes_for(helpers, files):
     old_asset = read_file(asset_directory / old_name)
     if hashlib.sha256(old_asset).hexdigest()[:20] != old_name.split('.')[1]:
         raise ValueError('现有连接页面资源的散列不匹配。')
-    pattern = r'(?ms)^function setOptions\(.*?(?=^function refreshOptions\()'
-    old_options = re.findall(pattern, old_asset.decode())
-    new_options = re.findall(pattern, files['connections-v8.js'])
-    if len(old_options) != 1 or len(new_options) != 1:
-        raise ValueError('连接页面的筛选函数结构不兼容。')
-    if old_options != new_options and 'unique.push(current)' not in old_options[0]:
-        raise ValueError('筛选函数包含其他改动，请检查当前版本。')
-    fixed_asset = old_asset.replace(old_options[0].encode(), new_options[0].encode(), 1)
+    fixed_script = old_asset.decode()
+    for start, end, legacy_marker in (
+            ('function setOptions(', 'function refreshOptions(', 'unique.push(current)'),
+            ('function localInput(', 'function cancelHistory(', 'function initDates('),
+            ('async function historyPage(', 'async function queryHistory(', 'notify(warnings(snapshot.manifest))'),
+            ('async function queryHistory(', 'function switchMode(', 'start<now-RETENTION-65'),
+            ('function switchMode(', "ui['mode-live'].addEventListener(", 'initDates();queryHistory();'),
+            ('function saveView(', 'function restoreViewScroll(', '{controls,mode,shown,scroll:')):
+        pattern = r'(?ms)^' + re.escape(start) + r'.*?(?=^' + re.escape(end) + ')'
+        existing = re.findall(pattern, fixed_script)
+        corrected = re.findall(pattern, files['connections-v8.js'])
+        if len(existing) != 1 or len(corrected) != 1:
+            raise ValueError('连接页面结构不兼容：' + start)
+        if existing != corrected and legacy_marker not in existing[0]:
+            raise ValueError('连接页面包含其他改动：' + start)
+        fixed_script = fixed_script.replace(existing[0], corrected[0], 1)
+    fixed_asset = fixed_script.encode()
     changes = {}
     if fixed_asset != old_asset:
         new_name = 'connections-fast.' + hashlib.sha256(fixed_asset).hexdigest()[:20] + '.js'
