@@ -83,16 +83,17 @@ function renderLive(){
 }
 function setOptions(select,values,all,textFunction){
   const current=select.value;
-  const unique=[...new Set(values)];if(current&&!unique.includes(current))unique.push(current);
-  const signature=JSON.stringify([unique,all,select===ui.user?accountLabels:null]);if(optionSignatures.get(select)===signature)return;
+  const unique=[...new Set(values)];
+  const selected=unique.includes(current)?current:'';
+  const signature=JSON.stringify([unique,all,select===ui.user?accountLabels:null]);
+  if(optionSignatures.get(select)===signature){select.value=selected;return;}
   optionSignatures.set(select,signature);const fragment=document.createDocumentFragment();
   const option=element('option','',all);option.value='';fragment.append(option);
   for(const value of unique){const option=element('option','',textFunction?textFunction(value):value);option.value=value;fragment.append(option);}
-  select.replaceChildren(fragment);select.value=current;
+  select.replaceChildren(fragment);select.value=selected;
 }
 function refreshOptions(snapshot){
   accountLabels={...accountLabels,...snapshot.account_labels,...rosterLabels};
-  if(mode==='live'&&ui.user.value&&!activeUsers?.has(ui.user.value))ui.user.value='';
   setOptions(ui.user,mode==='live'?[...(activeUsers||[])]:[...(snapshot.users||[])],'全部用户',label);
   if(mode==='live'&&activeUsers&&requestedUser!==null){
     if(activeUsers.has(requestedUser))ui.user.value=requestedUser;
@@ -101,7 +102,6 @@ function refreshOptions(snapshot){
     requestedUser=null;
   }
   const sources=mode==='live'?[...new Set((snapshot.rows||[]).filter(row=>activeUsers?.has(rowKey(row))).map(row=>row.source))]:[...(snapshot.sources||[])];
-  if(mode==='live'&&ui.source.value&&!sources.includes(ui.source.value))ui.source.value='';
   setOptions(ui.source,sources.sort(),'全部来源');
 }
 async function fetchJSON(path,signal){

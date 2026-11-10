@@ -79,7 +79,8 @@ def replace_functions(original,replacement,names,klass=None):
 
 def patch_history(text,template):
     if 'RETENTION = 7 * 86400' not in text:raise ValueError('历史组件不是当前 7 天版本。')
-    text=replace_functions(text,template,['__init__','add','as_row','export'],klass='History')
+    text=replace_functions(text,template,['__init__','add','as_row','prune','export'],klass='History')
+    text=replace_functions(text,template,['read_available'],klass='DurableFollower')
     if 'from identities import Resolver' not in text:text+='\nfrom identities import Resolver\n'
     return text
 

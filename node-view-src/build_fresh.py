@@ -113,6 +113,18 @@ def read_bundle(path):
     return json.loads(gzip.decompress(compressed))
 
 
+def update_history(files, release):
+    files['history.py'] = (ROOT/'v8/history.py').read_text()
+    source = (ROOT/'web/connections-v8.js').read_text()
+    asset = 'connections-fast.'+hashlib.sha256(source.encode()).hexdigest()[:20]+'.js'
+    old_asset, = (name for name, info in release['assets'].items() if info['source']=='connections-fast.js')
+    release['assets'][asset] = release['assets'].pop(old_asset)
+    files.pop('www/assets/'+old_asset)
+    files['www/assets/'+asset] = source
+    for name in ('www/connections.html', '_nginx_snippet'):
+        files[name] = files[name].replace(old_asset, asset)
+
+
 def build(base, target):
     if base is None:
         files = payload()
@@ -124,6 +136,7 @@ def build(base, target):
                          'maintenance.py':'maintenance.py','README.txt':'FRESH_README.txt'}.items():
         files[name] = (ROOT/source).read_text()
     release = json.loads(files['_release'])
+    update_history(files, release)
     files['_nginx_snippet'] = re.sub(r'(X-LoHo-Login-Version ")[0-9.]+(")',
                                      lambda match: match[1] + VERSION + match[2], files['_nginx_snippet'])
     release['version'] = VERSION
