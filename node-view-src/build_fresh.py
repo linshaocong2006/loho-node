@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import tempfile
 from unittest.mock import patch
 
@@ -137,6 +138,8 @@ def build(base, target):
         files[name] = (ROOT/source).read_text()
     release = json.loads(files['_release'])
     update_history(files, release)
+    patch_auth_socket = runpy.run_path(str(ROOT/'upgrade-auth-socket.py'))['patch_source']
+    files['auth.py'] = patch_auth_socket(files['auth.py'])
     files['_nginx_snippet'] = re.sub(r'(X-LoHo-Login-Version ")[0-9.]+(")',
                                      lambda match: match[1] + VERSION + match[2], files['_nginx_snippet'])
     release['version'] = VERSION
